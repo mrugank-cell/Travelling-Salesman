@@ -1,93 +1,133 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Travelling Salesman</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
-    ::-webkit-scrollbar { width: 5px; }
-    ::-webkit-scrollbar-track { background: #f8fafc; }
-    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
-    .nav-btn { transition: background 0.15s, color 0.15s; }
-    .nav-btn.active { background: #2563eb; color: #fff; }
-    .nav-btn:not(.active):hover { background: #f1f5f9; }
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    * { box-sizing: border-box; }
+    body { background: #eef2f7; font-family: 'Inter', system-ui, sans-serif; }
+
+    /* ── Sidebar ── */
+    #sidebar { background: #0f172a; width: 220px; flex-shrink: 0; }
+    .sb-brand { background: #1e293b; }
+    .nav-btn { color: #64748b; transition: all 0.18s; display: flex; align-items: center; gap: 10px;
+               width: 100%; text-align: left; padding: 9px 12px; border-radius: 10px; font-size: 13.5px; font-weight: 500; }
+    .nav-btn:hover:not(.active) { background: #1e293b; color: #cbd5e1; }
+    .nav-btn.active { background: linear-gradient(100deg, #3b82f6, #6366f1); color: #fff;
+                      box-shadow: 0 4px 14px rgba(99,102,241,.45); }
+    .sb-footer { border-top: 1px solid #1e293b; }
+
+    /* ── Cards ── */
+    .card { background: #fff; border-radius: 18px; border: 1px solid #e8edf5; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+
+    /* ── Metric cards with decorative circles ── */
+    .mc { border-radius: 18px; padding: 20px; color: #fff; position: relative; overflow: hidden; box-shadow: 0 6px 20px -4px; }
+    .mc::before { content:''; position:absolute; top:-18px; right:-18px; width:90px; height:90px; border-radius:50%; background:rgba(255,255,255,.12); }
+    .mc::after  { content:''; position:absolute; bottom:-28px; right:22px; width:70px; height:70px; border-radius:50%; background:rgba(255,255,255,.07); }
+    .mc-blue    { background: linear-gradient(135deg, #3b82f6, #6366f1); box-shadow-color:#a5b4fc; }
+    .mc-green   { background: linear-gradient(135deg, #10b981, #0d9488); box-shadow-color:#6ee7b7; }
+    .mc-violet  { background: linear-gradient(135deg, #8b5cf6, #7c3aed); box-shadow-color:#c4b5fd; }
+    .mc-amber   { background: linear-gradient(135deg, #f59e0b, #ea580c); box-shadow-color:#fcd34d; }
+    .mc-rose    { background: linear-gradient(135deg, #f43f5e, #db2777); box-shadow-color:#fda4af; }
+    .mc-cyan    { background: linear-gradient(135deg, #06b6d4, #3b82f6); box-shadow-color:#a5f3fc; }
+
+    /* ── Chart card accent stripe ── */
+    .chart-accent-blue   { background: linear-gradient(90deg,#3b82f6,#6366f1); height:3px; border-radius:18px 18px 0 0; }
+    .chart-accent-green  { background: linear-gradient(90deg,#10b981,#0d9488); height:3px; border-radius:18px 18px 0 0; }
+    .chart-accent-violet { background: linear-gradient(90deg,#8b5cf6,#6366f1); height:3px; border-radius:18px 18px 0 0; }
+    .chart-accent-amber  { background: linear-gradient(90deg,#f59e0b,#f97316); height:3px; border-radius:18px 18px 0 0; }
+    .chart-accent-rose   { background: linear-gradient(90deg,#f43f5e,#db2777); height:3px; border-radius:18px 18px 0 0; }
+    .chart-accent-cyan   { background: linear-gradient(90deg,#06b6d4,#3b82f6); height:3px; border-radius:18px 18px 0 0; }
+
+    /* ── Table ── */
+    .dt tbody tr:hover { background: #f7f9ff; }
+
+    /* ── Misc ── */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+    .drop-zone.drag-over { border-color: #6366f1; background: #eef2ff; }
     input[type=number]::-webkit-inner-spin-button { opacity: 1; }
-    .drop-zone.drag-over { border-color: #3b82f6; background: #eff6ff; }
+    select, input { outline: none; }
   </style>
 </head>
-<body class="bg-slate-50 text-gray-900 font-sans antialiased">
+<body>
 
 <div class="flex h-screen overflow-hidden">
 
-  <!-- ── Sidebar ── -->
-  <aside class="w-52 bg-white border-r border-gray-200 flex flex-col flex-shrink-0 shadow-sm">
-    <div class="px-5 py-4 border-b border-gray-100">
-      <p class="text-lg font-bold text-gray-900">Travelling Salesman</p>
-      <p class="text-[11px] text-gray-400 mt-0.5">Forecasting & Incentives</p>
+  <!-- ══ Sidebar ══ -->
+  <aside id="sidebar" class="flex flex-col">
+    <div class="sb-brand px-4 py-4 flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-xs font-black shadow-lg shadow-indigo-900/40">TS</div>
+      <div>
+        <p class="text-sm font-bold text-white leading-tight">Travelling Salesman</p>
+        <p class="text-[10px] text-slate-400 mt-0.5">Forecasting & Incentives</p>
+      </div>
     </div>
-    <nav class="flex-1 px-3 py-3 space-y-0.5" id="nav">
-      <button class="nav-btn w-full text-left px-3 py-2 rounded-lg text-sm font-medium text-gray-700" data-page="dashboard"     onclick="go('dashboard')">📊 Dashboard</button>
-      <button class="nav-btn w-full text-left px-3 py-2 rounded-lg text-sm font-medium text-gray-700" data-page="accounts"      onclick="go('accounts')">🏢 Accounts</button>
-      <button class="nav-btn w-full text-left px-3 py-2 rounded-lg text-sm font-medium text-gray-700" data-page="opportunities" onclick="go('opportunities')">🎯 Opportunities</button>
-      <button class="nav-btn w-full text-left px-3 py-2 rounded-lg text-sm font-medium text-gray-700" data-page="collections"   onclick="go('collections')">💰 Collections</button>
-      <button class="nav-btn w-full text-left px-3 py-2 rounded-lg text-sm font-medium text-gray-700" data-page="incentives"    onclick="go('incentives')">🏆 Incentives</button>
-      <button class="nav-btn w-full text-left px-3 py-2 rounded-lg text-sm font-medium text-gray-700" data-page="settings"      onclick="go('settings')">⚙️ Settings</button>
+    <nav class="flex-1 px-2.5 py-3 space-y-0.5" id="nav">
+      <button class="nav-btn" data-page="dashboard"     onclick="go('dashboard')">     <span>📊</span> Dashboard</button>
+      <button class="nav-btn" data-page="accounts"      onclick="go('accounts')">      <span>🏢</span> Accounts</button>
+      <button class="nav-btn" data-page="opportunities" onclick="go('opportunities')"> <span>🎯</span> Opportunities</button>
+      <button class="nav-btn" data-page="collections"   onclick="go('collections')">   <span>💰</span> Collections</button>
+      <button class="nav-btn" data-page="incentives"    onclick="go('incentives')">    <span>🏆</span> Incentives</button>
+      <button class="nav-btn" data-page="reports"       onclick="go('reports')">       <span>📈</span> Reports</button>
+      <button class="nav-btn" data-page="settings"      onclick="go('settings')">      <span>⚙️</span> Settings</button>
     </nav>
-    <div class="px-4 py-3 border-t border-gray-100">
-      <p class="text-[10px] text-gray-300">FY: Apr – Mar</p>
+    <div class="sb-footer px-4 py-3">
+      <p class="text-[10px] text-slate-600">Financial Year: Apr – Mar</p>
     </div>
   </aside>
 
-  <!-- ── Main ── -->
+  <!-- ══ Main ══ -->
   <main class="flex-1 overflow-y-auto">
     <div id="app" class="p-7 max-w-6xl mx-auto"></div>
   </main>
 </div>
 
-<!-- ── Toast ── -->
 <div id="toast" class="fixed bottom-6 right-6 z-50 hidden">
-  <div class="bg-gray-900 text-white text-sm px-4 py-2.5 rounded-lg shadow-xl" id="toast-msg"></div>
+  <div class="bg-slate-900 text-white text-sm px-4 py-2.5 rounded-xl shadow-2xl border border-slate-700" id="toast-msg"></div>
 </div>
 
 <script>
-// ════════════════════════════════════════════════
-//  CONSTANTS
-// ════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════
+//  CONSTANTS & PALETTE
+// ═══════════════════════════════════════════════════
 const MONTHS = ['January','February','March','April','May','June',
                 'July','August','September','October','November','December'];
-const STATUS  = ['Open','Commit','Best Case','Won','Lost'];
-const OPEN_ST = ['Open','Commit','Best Case'];
-const STATUS_COLOR = {
-  Open:'bg-blue-100 text-blue-700', Commit:'bg-violet-100 text-violet-700',
-  'Best Case':'bg-amber-100 text-amber-700', Won:'bg-emerald-100 text-emerald-700',
-  Lost:'bg-red-100 text-red-700',
-};
-const TIERS   = ['Enterprise','Mid-Market','SMB'];
-const HEALTH  = ['Green','Yellow','Red'];
-const RISK    = ['Low','Medium','High'];
+const STATUS   = ['Open','Commit','Best Case','Won','Lost'];
+const OPEN_ST  = ['Open','Commit','Best Case'];
+const TIERS    = ['Enterprise','Mid-Market','SMB'];
+const HEALTH   = ['Green','Yellow','Red'];
+const RISK     = ['Low','Medium','High'];
 
-// Account field definitions for CSV mapping
+const PALETTE  = ['#6366f1','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#f97316','#ec4899','#84cc16','#3b82f6'];
+const ST_COLOR = { Open:'#3b82f6', Commit:'#8b5cf6', 'Best Case':'#f59e0b', Won:'#10b981', Lost:'#ef4444' };
+const MC_THEMES = ['mc-blue','mc-green','mc-violet','mc-amber','mc-rose','mc-cyan'];
+const ACCENTS   = ['chart-accent-blue','chart-accent-green','chart-accent-violet','chart-accent-amber','chart-accent-rose','chart-accent-cyan'];
+
 const ACC_FIELDS = [
-  { key:'account_name',  label:'Account Name',  required:true,  aliases:['account name','account','company','client','customer','organisation','organization'] },
-  { key:'am_name',       label:'AM Name',        required:true,  aliases:['am','am name','account manager','account_manager','ae','account executive'] },
-  { key:'csm_name',      label:'CSM Name',       required:true,  aliases:['csm','csm name','customer success','csm_name','customer success manager','success manager'] },
-  { key:'arr',           label:'ARR (₹)',         required:true,  aliases:['arr','annual recurring revenue','annual revenue','acv','contract value','arr value'] },
-  { key:'product',       label:'Product',         required:true,  aliases:['product','products','product name','plan','subscription','package'] },
-  { key:'renewal_date',  label:'Renewal Date',    required:true,  aliases:['renewal date','renewal','contract renewal','expiry date','end date','contract end','contract expiry'] },
-  { key:'account_tier',  label:'Account Tier',    required:false, aliases:['tier','account tier','segment','account segment','customer tier'] },
-  { key:'health_score',  label:'Health Score',    required:false, aliases:['health','health score','account health','health status','nps'] },
-  { key:'churn_risk',    label:'Churn Risk',      required:false, aliases:['churn risk','churn','risk','risk level','attrition risk'] },
-  { key:'notes',         label:'Notes',           required:false, aliases:['notes','comments','note','remarks','description'] },
+  { key:'account_name', label:'Account Name', required:true,  aliases:['account name','account','company','client','customer','organisation','organization'] },
+  { key:'am_name',      label:'AM Name',       required:true,  aliases:['am','am name','account manager','account_manager','ae','account executive'] },
+  { key:'csm_name',     label:'CSM Name',      required:true,  aliases:['csm','csm name','customer success','csm_name','customer success manager'] },
+  { key:'arr',          label:'ARR (₹)',        required:true,  aliases:['arr','annual recurring revenue','annual revenue','acv','contract value'] },
+  { key:'product',      label:'Product',        required:true,  aliases:['product','products','product name','plan','subscription','package'] },
+  { key:'renewal_date', label:'Renewal Date',   required:true,  aliases:['renewal date','renewal','contract renewal','expiry date','end date','contract end'] },
+  { key:'account_tier', label:'Account Tier',   required:false, aliases:['tier','account tier','segment','customer tier'] },
+  { key:'health_score', label:'Health Score',   required:false, aliases:['health','health score','account health','health status'] },
+  { key:'churn_risk',   label:'Churn Risk',     required:false, aliases:['churn risk','churn','risk','risk level'] },
+  { key:'notes',        label:'Notes',          required:false, aliases:['notes','comments','note','remarks'] },
 ];
 
-// ════════════════════════════════════════════════
-//  DATA LAYER  (localStorage)
-// ════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════
+//  DATA LAYER
+// ═══════════════════════════════════════════════════
 const ls = {
-  get: (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
-  set: (k, v) => localStorage.setItem(k, JSON.stringify(v)),
+  get: (k,d) => { try { return JSON.parse(localStorage.getItem(k))??d; } catch { return d; } },
+  set: (k,v) => localStorage.setItem(k, JSON.stringify(v)),
 };
 const opps    = () => ls.get('opps', []);
 const cols    = () => ls.get('cols', []);
@@ -97,283 +137,273 @@ const setOpps = v  => ls.set('opps', v);
 const setCols = v  => ls.set('cols', v);
 const setCfg  = v  => ls.set('cfg', v);
 const setAccs = v  => ls.set('accs', v);
-const uid     = arr => arr.length ? Math.max(...arr.map(x=>x.id))+1 : 1;
+const uid     = a  => a.length ? Math.max(...a.map(x=>x.id))+1 : 1;
 
-// ════════════════════════════════════════════════
-//  FY HELPERS
-// ════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════
+//  FY + ENRICHMENT HELPERS
+// ═══════════════════════════════════════════════════
 function fyq(mIdx, yr) {
-  const m = mIdx + 1;
-  let q, s;
-  if (m >= 4) { s = yr;   q = m<=6?'Q1':m<=9?'Q2':'Q3'; }
-  else        { s = yr-1; q = 'Q4'; }
-  return { q, fy: `FY${s}-${String(s+1).slice(2)}` };
+  const m=mIdx+1; let q,s;
+  if(m>=4){s=yr;   q=m<=6?'Q1':m<=9?'Q2':'Q3';}
+  else    {s=yr-1; q='Q4';}
+  return {q, fy:`FY${s}-${String(s+1).slice(2)}`};
 }
-function nowFy() { const n=new Date(); return fyq(n.getMonth(), n.getFullYear()).fy; }
-const inr = n => '₹' + Number(n).toLocaleString('en-IN', {maximumFractionDigits:0});
+function nowFy(){ const n=new Date(); return fyq(n.getMonth(),n.getFullYear()).fy; }
+const inr = n => '₹'+Number(n).toLocaleString('en-IN',{maximumFractionDigits:0});
+const compact = v => '₹'+Number(v).toLocaleString('en-IN',{notation:'compact',maximumFractionDigits:1});
 
-// Account enrichment (computed fields)
 function enrichAcc(a) {
-  const arr = Number(a.arr) || 0;
-  const mrr = arr / 12;
-  let days = null, renewalStatus = '', renewalQ = '', renewalFy = '';
-  if (a.renewal_date) {
-    const rd = new Date(a.renewal_date);
-    if (!isNaN(rd)) {
-      const today = new Date(); today.setHours(0,0,0,0);
-      days = Math.round((rd - today) / 86400000);
-      if      (days < 0)   renewalStatus = 'Expired';
-      else if (days < 30)  renewalStatus = 'Critical';
-      else if (days < 90)  renewalStatus = 'Soon';
-      else if (days < 180) renewalStatus = 'Upcoming';
-      else                  renewalStatus = 'Future';
-      const {q, fy} = fyq(rd.getMonth(), rd.getFullYear());
-      renewalQ = q; renewalFy = fy;
+  const arr=Number(a.arr)||0, mrr=arr/12;
+  let days=null, renewalStatus='', renewalQ='', renewalFy='';
+  if(a.renewal_date){
+    const rd=new Date(a.renewal_date);
+    if(!isNaN(rd)){
+      const t=new Date(); t.setHours(0,0,0,0);
+      days=Math.round((rd-t)/86400000);
+      if(days<0)   renewalStatus='Expired';
+      else if(days<30)  renewalStatus='Critical';
+      else if(days<90)  renewalStatus='Soon';
+      else if(days<180) renewalStatus='Upcoming';
+      else              renewalStatus='Future';
+      const {q,fy}=fyq(rd.getMonth(),rd.getFullYear());
+      renewalQ=q; renewalFy=fy;
     }
   }
-  return { ...a, arr, mrr, days, renewalStatus, renewalQ, renewalFy };
+  return {...a, arr, mrr, days, renewalStatus, renewalQ, renewalFy};
 }
 
-// ════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════
 //  ROUTER
-// ════════════════════════════════════════════════
-let page    = 'dashboard';
-let charts  = {};
-let oppMode = 'list';
-let colMode = 'list';
-let accMode = 'list';   // list | import | add | edit
-let editId  = null;
-let accEditId = null;
-let csvParsed = null;   // { headers, rows }
-let csvMapping = {};
+// ═══════════════════════════════════════════════════
+let page='dashboard', charts={};
+let oppMode='list', colMode='list', accMode='list';
+let editId=null, accEditId=null;
+let csvParsed=null, csvMapping={};
 
-function go(p) {
-  page = p; oppMode = 'list'; colMode = 'list'; accMode = 'list';
-  Object.values(charts).forEach(c => c.destroy()); charts = {};
-  document.querySelectorAll('.nav-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.page === p);
-    if (b.dataset.page !== p) b.classList.add('text-gray-700');
-    else b.classList.remove('text-gray-700');
+function go(p){
+  page=p; oppMode='list'; colMode='list'; accMode='list';
+  Object.values(charts).forEach(c=>c.destroy()); charts={};
+  document.querySelectorAll('.nav-btn').forEach(b=>{
+    const isActive=b.dataset.page===p;
+    b.classList.toggle('active',isActive);
   });
   render();
 }
-
-function render() {
-  document.getElementById('app').innerHTML = '';
-  ({ dashboard, accounts, opportunities, collections, incentives, settings })[page]();
+function render(){
+  document.getElementById('app').innerHTML='';
+  ({dashboard,accounts,opportunities,collections,incentives,reports,settings})[page]();
 }
 
-// ════════════════════════════════════════════════
+// Chart.js global defaults
+Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
+Chart.defaults.color = '#64748b';
+Chart.defaults.plugins.legend.labels.usePointStyle = true;
+Chart.defaults.plugins.legend.labels.padding = 14;
+
+// ═══════════════════════════════════════════════════
 //  SHARED COMPONENTS
-// ════════════════════════════════════════════════
-function card(html, cls='') {
-  return `<div class="bg-white rounded-xl border border-gray-200 ${cls}">${html}</div>`;
+// ═══════════════════════════════════════════════════
+function card(html,cls=''){
+  return `<div class="card ${cls}">${html}</div>`;
 }
-function metric(label, val, sub='') {
-  return card(`
-    <p class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">${label}</p>
-    <p class="text-2xl font-bold text-gray-900 mt-1">${val}</p>
-    ${sub ? `<p class="text-xs text-gray-400 mt-0.5">${sub}</p>` : ''}
-  `, 'p-5');
+function mc(label,val,sub='',ti=0){
+  const theme=MC_THEMES[ti%MC_THEMES.length];
+  return `<div class="mc ${theme}">
+    <p class="text-[11px] font-semibold uppercase tracking-widest" style="opacity:.75">${label}</p>
+    <p class="text-2xl font-extrabold mt-1" style="position:relative;z-index:1">${val}</p>
+    ${sub?`<p class="text-xs mt-0.5" style="opacity:.6;position:relative;z-index:1">${sub}</p>`:''}
+  </div>`;
 }
-function badge(s) {
-  return `<span class="px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[s]||'bg-gray-100 text-gray-500'}">${s}</span>`;
+function chartCard(title,id,height=220,accentIdx=0){
+  const ac=ACCENTS[accentIdx%ACCENTS.length];
+  return `<div class="card overflow-hidden">
+    <div class="${ac}"></div>
+    <div class="p-5"><p class="text-sm font-semibold text-slate-700 mb-3">${title}</p><canvas id="${id}" height="${height}"></canvas></div>
+  </div>`;
 }
-function typeBadge(t) {
-  const c = t==='AM' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700';
-  return `<span class="px-2 py-0.5 rounded-full text-xs font-medium ${c}">${t}</span>`;
+function sectionHead(title,emoji=''){
+  return `<div class="flex items-center gap-2.5 mb-4 mt-6">
+    <div class="w-1.5 h-6 rounded-full bg-gradient-to-b from-indigo-500 to-blue-400"></div>
+    <p class="text-xs font-bold text-slate-500 uppercase tracking-[.12em]">${emoji} ${title}</p>
+  </div>`;
 }
-function healthBadge(h) {
-  const c = h==='Green'?'bg-emerald-100 text-emerald-700':h==='Yellow'?'bg-amber-100 text-amber-700':'bg-red-100 text-red-700';
-  const dot = h==='Green'?'🟢':h==='Yellow'?'🟡':'🔴';
-  return h ? `<span class="px-2 py-0.5 rounded-full text-xs font-medium ${c}">${dot} ${h}</span>` : '—';
-}
-function riskBadge(r) {
-  const c = r==='Low'?'bg-emerald-100 text-emerald-700':r==='Medium'?'bg-amber-100 text-amber-700':'bg-red-100 text-red-700';
-  return r ? `<span class="px-2 py-0.5 rounded-full text-xs font-medium ${c}">${r}</span>` : '—';
-}
-function renewalBadge(s) {
-  const map = {
-    Critical:'bg-red-100 text-red-700', Soon:'bg-amber-100 text-amber-700',
-    Upcoming:'bg-blue-100 text-blue-700', Future:'bg-gray-100 text-gray-500',
-    Expired:'bg-red-200 text-red-800',
-  };
-  return s ? `<span class="px-2 py-0.5 rounded-full text-xs font-medium ${map[s]||'bg-gray-100 text-gray-500'}">${s}</span>` : '';
-}
-function tierBadge(t) {
-  const c = t==='Enterprise'?'bg-violet-100 text-violet-700':t==='Mid-Market'?'bg-blue-100 text-blue-700':'bg-gray-100 text-gray-600';
-  return t ? `<span class="px-2 py-0.5 rounded-full text-xs font-medium ${c}">${t}</span>` : '—';
-}
-function pageHeader(title, sub, btnHtml='') {
+function pageHeader(title,sub,btnHtml=''){
   return `<div class="flex items-start justify-between mb-6">
     <div>
-      <h1 class="text-2xl font-bold text-gray-900">${title}</h1>
-      ${sub ? `<p class="text-sm text-gray-400 mt-0.5">${sub}</p>` : ''}
+      <h1 class="text-2xl font-extrabold text-slate-800">${title}</h1>
+      ${sub?`<p class="text-sm text-slate-400 mt-0.5">${sub}</p>`:''}
     </div>
     ${btnHtml}
   </div>`;
 }
-function inp(id, type, val, cls='', extra='') {
-  return `<input id="${id}" type="${type}" value="${val}" ${extra} class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${cls}" />`;
+function inp(id,type,val,cls='',extra=''){
+  return `<input id="${id}" type="${type}" value="${val}" ${extra} class="w-full border border-slate-200 bg-slate-50 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white transition ${cls}"/>`;
 }
-function sel(id, opts, selVal, cls='') {
-  const options = opts.map(o => {
-    const v = typeof o==='object' ? o.v : o;
-    const l = typeof o==='object' ? o.l : o;
+function sel(id,opts,selVal,cls=''){
+  const o=opts.map(o=>{
+    const v=typeof o==='object'?o.v:o, l=typeof o==='object'?o.l:o;
     return `<option value="${v}" ${String(v)===String(selVal)?'selected':''}>${l}</option>`;
   }).join('');
-  return `<select id="${id}" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${cls}">${options}</select>`;
+  return `<select id="${id}" class="border border-slate-200 bg-slate-50 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white transition ${cls}">${o}</select>`;
 }
-function lbl(text) { return `<label class="block text-xs font-medium text-gray-500 mb-1">${text}</label>`; }
-function frow(...fields) {
-  return `<div class="grid grid-cols-${fields.length} gap-4">${fields.map(f=>`<div>${f}</div>`).join('')}</div>`;
+function lbl(t){ return `<label class="block text-xs font-semibold text-slate-500 mb-1.5">${t}</label>`; }
+function frow(...f){ return `<div class="grid grid-cols-${f.length} gap-4">${f.map(x=>`<div>${x}</div>`).join('')}</div>`; }
+function emptyState(msg){
+  return `<div class="text-center py-16">
+    <div class="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center text-2xl mx-auto mb-3">📭</div>
+    <p class="text-sm text-slate-400">${msg}</p>
+  </div>`;
 }
-function emptyState(msg) {
-  return `<div class="text-center py-16 text-gray-300"><p class="text-4xl mb-3">📭</p><p class="text-sm">${msg}</p></div>`;
-}
-function thRow(headers) {
-  return `<tr>${headers.map(h=>`<th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">${h}</th>`).join('')}</tr>`;
+function thRow(hs){
+  return `<tr>${hs.map(h=>`<th class="text-left px-4 py-3 text-[11px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">${h}</th>`).join('')}</tr>`;
 }
 
-// ════════════════════════════════════════════════
+// Badges
+function stBadge(s){
+  const m={Open:'bg-blue-100 text-blue-700 border-blue-200',Commit:'bg-violet-100 text-violet-700 border-violet-200','Best Case':'bg-amber-100 text-amber-700 border-amber-200',Won:'bg-emerald-100 text-emerald-700 border-emerald-200',Lost:'bg-red-100 text-red-700 border-red-200'};
+  return `<span class="px-2.5 py-0.5 rounded-full text-xs font-semibold border ${m[s]||'bg-slate-100 text-slate-500 border-slate-200'}">${s}</span>`;
+}
+function typeBadge(t){
+  const c=t==='AM'?'bg-blue-100 text-blue-700 border-blue-200':'bg-orange-100 text-orange-700 border-orange-200';
+  return `<span class="px-2.5 py-0.5 rounded-full text-xs font-semibold border ${c}">${t}</span>`;
+}
+function healthBadge(h){
+  const m={Green:'bg-emerald-100 text-emerald-700 border-emerald-200',Yellow:'bg-amber-100 text-amber-700 border-amber-200',Red:'bg-red-100 text-red-700 border-red-200'};
+  const d={Green:'🟢',Yellow:'🟡',Red:'🔴'};
+  return h?`<span class="px-2.5 py-0.5 rounded-full text-xs font-semibold border ${m[h]||''}">${d[h]||''} ${h}</span>`:'<span class="text-slate-300">—</span>';
+}
+function riskBadge(r){
+  const m={Low:'bg-emerald-100 text-emerald-700 border-emerald-200',Medium:'bg-amber-100 text-amber-700 border-amber-200',High:'bg-red-100 text-red-700 border-red-200'};
+  return r?`<span class="px-2.5 py-0.5 rounded-full text-xs font-semibold border ${m[r]||''}">${r}</span>`:'<span class="text-slate-300">—</span>';
+}
+function renewBadge(s){
+  const m={Critical:'bg-red-100 text-red-700 border-red-200',Soon:'bg-amber-100 text-amber-700 border-amber-200',Upcoming:'bg-blue-100 text-blue-700 border-blue-200',Future:'bg-slate-100 text-slate-500 border-slate-200',Expired:'bg-rose-200 text-rose-800 border-rose-300'};
+  return s?`<span class="px-2.5 py-0.5 rounded-full text-xs font-semibold border ${m[s]||''}">${s}</span>`:'';
+}
+function tierBadge(t){
+  const m={Enterprise:'bg-violet-100 text-violet-700 border-violet-200','Mid-Market':'bg-blue-100 text-blue-700 border-blue-200',SMB:'bg-slate-100 text-slate-600 border-slate-200'};
+  return t?`<span class="px-2.5 py-0.5 rounded-full text-xs font-semibold border ${m[t]||'bg-slate-100 text-slate-500 border-slate-200'}">${t}</span>`:'<span class="text-slate-300">—</span>';
+}
+
+// ═══════════════════════════════════════════════════
 //  DASHBOARD
-// ════════════════════════════════════════════════
-function dashboard() {
-  const all  = opps();
-  const fy   = nowFy();
-  const fyo  = all.filter(o => o.fy === fy);
-  const openV = fyo.filter(o => OPEN_ST.includes(o.status)).reduce((s,o)=>s+o.value,0);
-  const wonV  = fyo.filter(o => o.status==='Won').reduce((s,o)=>s+o.value,0);
-  const lostV = fyo.filter(o => o.status==='Lost').reduce((s,o)=>s+o.value,0);
-
-  // Account metrics
-  const allAccs   = accs().map(enrichAcc);
-  const totalARR  = allAccs.reduce((s,a)=>s+a.arr,0);
-  const atRisk    = allAccs.filter(a=>a.churn_risk==='High'||a.renewalStatus==='Critical');
-  const upcoming  = allAccs.filter(a=>a.days!==null&&a.days>=0&&a.days<=90).sort((a,b)=>a.days-b.days);
+// ═══════════════════════════════════════════════════
+function dashboard(){
+  const fy=nowFy(), fyo=opps().filter(o=>o.fy===fy);
+  const openV=fyo.filter(o=>OPEN_ST.includes(o.status)).reduce((s,o)=>s+o.value,0);
+  const wonV=fyo.filter(o=>o.status==='Won').reduce((s,o)=>s+o.value,0);
+  const lostV=fyo.filter(o=>o.status==='Lost').reduce((s,o)=>s+o.value,0);
+  const allA=accs().map(enrichAcc);
+  const totalARR=allA.reduce((s,a)=>s+a.arr,0);
+  const atRisk=allA.filter(a=>a.churn_risk==='High'||a.renewalStatus==='Critical');
+  const upcoming=allA.filter(a=>a.days!=null&&a.days>=0&&a.days<=90).sort((a,b)=>a.days-b.days);
 
   document.getElementById('app').innerHTML = `
-    ${pageHeader('Dashboard', `Pipeline · ${fy}`)}
+    ${pageHeader('Dashboard', `${fy} · ${new Date().toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})}`)}
 
-    ${allAccs.length > 0 ? `
-    <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Account Book</p>
+    ${allA.length ? `
+    ${sectionHead('Account Book','🏢')}
     <div class="grid grid-cols-4 gap-4 mb-6">
-      ${metric('Total ARR', inr(totalARR), `${allAccs.length} accounts`)}
-      ${metric('Monthly MRR', inr(totalARR/12))}
-      ${metric('At-Risk Accounts', atRisk.length, 'High churn or Critical renewal')}
-      ${metric('Renewing in 90d', upcoming.length, inr(upcoming.reduce((s,a)=>s+a.arr,0))+' ARR')}
+      ${mc('Total ARR',inr(totalARR),`${allA.length} accounts`,0)}
+      ${mc('Monthly MRR',inr(totalARR/12),'Annualised ÷ 12',1)}
+      ${mc('At-Risk Accounts',atRisk.length,'High churn or Critical',4)}
+      ${mc('Renewing in 90d',upcoming.length,inr(upcoming.reduce((s,a)=>s+a.arr,0))+' ARR',3)}
     </div>` : ''}
 
-    <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Pipeline</p>
-    <div class="grid grid-cols-4 gap-4 mb-5">
-      ${metric('Open Pipeline', inr(openV))}
-      ${metric('Won', inr(wonV))}
-      ${metric('Lost', inr(lostV))}
-      ${metric('Total Deals', fyo.length, fy)}
+    ${sectionHead('Pipeline','🎯')}
+    <div class="grid grid-cols-4 gap-4 mb-6">
+      ${mc('Open Pipeline',inr(openV),'',0)}
+      ${mc('Won',inr(wonV),'',1)}
+      ${mc('Lost',inr(lostV),'',4)}
+      ${mc('Total Deals',fyo.length,fy,2)}
     </div>
 
-    <div class="grid grid-cols-2 gap-4 mb-4">
-      ${card('<p class="text-sm font-semibold text-gray-700 mb-3">Pipeline by Quarter & Status</p><canvas id="ch-q" height="210"></canvas>', 'p-5')}
-      ${card('<p class="text-sm font-semibold text-gray-700 mb-3">Status Breakdown</p><canvas id="ch-s" height="210"></canvas>', 'p-5')}
+    <div class="grid grid-cols-2 gap-5 mb-5">
+      ${chartCard('Pipeline by Quarter & Status','ch-q',200,0)}
+      ${chartCard('Deal Status Breakdown','ch-s',200,1)}
     </div>
 
-    ${upcoming.length > 0 ? card(`
-      <div class="flex items-center justify-between mb-3">
-        <p class="text-sm font-semibold text-gray-700">🔔 Renewals in Next 90 Days</p>
-        <button onclick="go('accounts')" class="text-xs text-blue-500 hover:underline">View all →</button>
-      </div>
-      <table class="w-full text-sm">
-        <thead class="bg-gray-50 border-b border-gray-100">
-          ${thRow(['Account','AM','CSM','ARR','Renewal Date','Days','Status'])}
-        </thead>
-        <tbody class="divide-y divide-gray-50">
-          ${upcoming.slice(0,8).map(a=>`
-            <tr class="hover:bg-slate-50">
-              <td class="px-4 py-2.5 font-medium">${a.account_name}</td>
-              <td class="px-4 py-2.5 text-gray-500 text-xs">${a.am_name}</td>
-              <td class="px-4 py-2.5 text-gray-500 text-xs">${a.csm_name}</td>
-              <td class="px-4 py-2.5 font-semibold">${inr(a.arr)}</td>
-              <td class="px-4 py-2.5 text-gray-500 text-xs">${a.renewal_date}</td>
-              <td class="px-4 py-2.5 text-xs font-semibold ${a.days<30?'text-red-600':a.days<90?'text-amber-600':'text-gray-600'}">${a.days}d</td>
-              <td class="px-4 py-2.5">${renewalBadge(a.renewalStatus)}</td>
+    ${upcoming.length ? `
+    ${sectionHead('Upcoming Renewals (next 90 days)','🔔')}
+    <div class="card overflow-hidden mb-5">
+      <div class="chart-accent-amber"></div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm dt">
+          <thead class="bg-slate-50 border-b border-slate-100">${thRow(['Account','AM','CSM','ARR','Renewal Date','Days Left','Status'])}</thead>
+          <tbody class="divide-y divide-slate-50">
+            ${upcoming.slice(0,8).map(a=>`<tr>
+              <td class="px-4 py-3 font-semibold text-slate-800">${a.account_name}</td>
+              <td class="px-4 py-3 text-slate-500 text-xs">${a.am_name}</td>
+              <td class="px-4 py-3 text-slate-500 text-xs">${a.csm_name}</td>
+              <td class="px-4 py-3 font-semibold">${inr(a.arr)}</td>
+              <td class="px-4 py-3 text-slate-500 text-xs">${a.renewal_date}</td>
+              <td class="px-4 py-3 text-sm font-bold ${a.days<30?'text-red-500':a.days<90?'text-amber-500':'text-slate-400'}">${a.days}d</td>
+              <td class="px-4 py-3">${renewBadge(a.renewalStatus)}</td>
             </tr>`).join('')}
-        </tbody>
-      </table>
-    `, 'overflow-hidden mb-4') : ''}
+          </tbody>
+        </table>
+      </div>
+    </div>` : ''}
 
-    ${card('<p class="text-sm font-semibold text-gray-700 mb-3">Rep-wise Pipeline (Open + Won)</p><canvas id="ch-r" height="120"></canvas>', 'p-5')}
+    ${chartCard('Rep-wise Pipeline','ch-r',110,2)}
   `;
 
-  const qs = ['Q1','Q2','Q3','Q4'];
-  const sc = { Open:'#3b82f6', Commit:'#8b5cf6', 'Best Case':'#f59e0b', Won:'#10b981', Lost:'#ef4444' };
-  const compact = v => '₹'+Number(v).toLocaleString('en-IN',{notation:'compact'});
-
-  charts.q = new Chart(document.getElementById('ch-q'), {
-    type: 'bar',
-    data: {
-      labels: qs,
-      datasets: STATUS.map(s => ({
-        label: s,
-        data: qs.map(q => fyo.filter(o=>o.quarter===q&&o.status===s).reduce((a,o)=>a+o.value,0)),
-        backgroundColor: sc[s],
-      })),
-    },
-    options: { responsive:true, plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}}}, scales:{x:{grid:{display:false}},y:{ticks:{callback:compact}}} },
+  const qs=['Q1','Q2','Q3','Q4'];
+  charts.q=new Chart(document.getElementById('ch-q'),{
+    type:'bar',
+    data:{labels:qs,datasets:STATUS.map(s=>({label:s,data:qs.map(q=>fyo.filter(o=>o.quarter===q&&o.status===s).reduce((a,o)=>a+o.value,0)),backgroundColor:ST_COLOR[s],borderRadius:5,borderSkipped:false}))},
+    options:{responsive:true,plugins:{legend:{position:'bottom'}},scales:{x:{grid:{display:false},stacked:false},y:{ticks:{callback:compact},grid:{color:'#f1f5f9'}}}},
   });
-
-  const stTotals = STATUS.map(s => fyo.filter(o=>o.status===s).reduce((a,o)=>a+o.value,0));
-  charts.s = new Chart(document.getElementById('ch-s'), {
-    type: 'doughnut',
-    data: { labels:STATUS, datasets:[{data:stTotals, backgroundColor:Object.values(sc), borderWidth:2}] },
-    options: { responsive:true, plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}}} },
+  charts.s=new Chart(document.getElementById('ch-s'),{
+    type:'doughnut',
+    data:{labels:STATUS,datasets:[{data:STATUS.map(s=>fyo.filter(o=>o.status===s).reduce((a,o)=>a+o.value,0)),backgroundColor:Object.values(ST_COLOR),borderWidth:2,hoverOffset:8}]},
+    options:{responsive:true,plugins:{legend:{position:'bottom'}},cutout:'65%'},
   });
-
-  const repMap = {};
-  fyo.filter(o=>[...OPEN_ST,'Won'].includes(o.status)).forEach(o => { repMap[o.rep_name]=(repMap[o.rep_name]||0)+o.value; });
-  charts.r = new Chart(document.getElementById('ch-r'), {
-    type: 'bar',
-    data: { labels:Object.keys(repMap), datasets:[{label:'Value',data:Object.values(repMap),backgroundColor:'#3b82f6',borderRadius:4}] },
-    options: { responsive:true, indexAxis:'y', plugins:{legend:{display:false}}, scales:{x:{ticks:{callback:compact}},y:{grid:{display:false}}} },
+  const repMap={};
+  fyo.filter(o=>[...OPEN_ST,'Won'].includes(o.status)).forEach(o=>{repMap[o.rep_name]=(repMap[o.rep_name]||0)+o.value;});
+  charts.r=new Chart(document.getElementById('ch-r'),{
+    type:'bar',
+    data:{labels:Object.keys(repMap),datasets:[{label:'Pipeline',data:Object.values(repMap),backgroundColor:PALETTE,borderRadius:6,borderSkipped:false}]},
+    options:{responsive:true,indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{ticks:{callback:compact},grid:{color:'#f1f5f9'}},y:{grid:{display:false}}}},
   });
 }
 
-// ════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════
 //  ACCOUNTS
-// ════════════════════════════════════════════════
-function accounts() {
-  document.getElementById('app').innerHTML = `
-    ${pageHeader('Accounts','Your account book',
-      `<div class="flex gap-2">
-        <button onclick="downloadSampleCSV()" class="border border-gray-200 text-gray-600 hover:bg-gray-50 text-sm font-medium px-3 py-2 rounded-lg">↓ Sample CSV</button>
-        <button onclick="exportAccs()" class="border border-gray-200 text-gray-600 hover:bg-gray-50 text-sm font-medium px-3 py-2 rounded-lg">↑ Export</button>
-        <button onclick="accMode='import';render()" class="border border-blue-200 text-blue-600 hover:bg-blue-50 text-sm font-medium px-3 py-2 rounded-lg">Import CSV</button>
-        <button onclick="accMode='add';render()" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg">+ Add Account</button>
+// ═══════════════════════════════════════════════════
+function accounts(){
+  document.getElementById('app').innerHTML=`
+    ${pageHeader('Accounts','Your account book',`
+      <div class="flex gap-2 flex-wrap">
+        <button onclick="downloadSampleCSV()" class="border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium px-3 py-2 rounded-xl transition">↓ Template</button>
+        <button onclick="exportAccs()" class="border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-medium px-3 py-2 rounded-xl transition">↑ Export</button>
+        <button onclick="accMode='import';render()" class="border border-indigo-200 text-indigo-600 hover:bg-indigo-50 text-sm font-medium px-3 py-2 rounded-xl transition">Import CSV</button>
+        <button onclick="accMode='add';render()" class="bg-gradient-to-r from-blue-600 to-indigo-600 hover:opacity-90 text-white text-sm font-semibold px-4 py-2 rounded-xl shadow shadow-indigo-200 transition">+ Add Account</button>
       </div>`
     )}
     <div id="acc-body"></div>
   `;
-  if      (accMode==='import')              renderAccImport();
-  else if (accMode==='add'||accMode==='edit') renderAccForm();
+  if(accMode==='import')              renderAccImport();
+  else if(accMode==='add'||accMode==='edit') renderAccForm();
   else                                       renderAccList();
 }
 
-// ── List ──────────────────────────────────────────
-function renderAccList() {
-  const data = accs().map(enrichAcc);
-  const ams   = [...new Set(data.map(a=>a.am_name).filter(Boolean))].sort();
-  const csms  = [...new Set(data.map(a=>a.csm_name).filter(Boolean))].sort();
-  const prods = [...new Set(data.map(a=>a.product).filter(Boolean))].sort();
-  const totalARR = data.reduce((s,a)=>s+a.arr,0);
+function renderAccList(){
+  const data=accs().map(enrichAcc);
+  const ams=[...new Set(data.map(a=>a.am_name).filter(Boolean))].sort();
+  const csms=[...new Set(data.map(a=>a.csm_name).filter(Boolean))].sort();
+  const prods=[...new Set(data.map(a=>a.product).filter(Boolean))].sort();
+  const totalARR=data.reduce((s,a)=>s+a.arr,0);
 
-  document.getElementById('acc-body').innerHTML = `
-    <div class="grid grid-cols-4 gap-4 mb-5">
-      ${metric('Total Accounts', data.length)}
-      ${metric('Total ARR', inr(totalARR))}
-      ${metric('Total MRR', inr(totalARR/12))}
-      ${metric('At Risk', data.filter(a=>a.churn_risk==='High'||a.renewalStatus==='Critical').length, 'High churn or critical renewal')}
+  document.getElementById('acc-body').innerHTML=`
+    <div class="grid grid-cols-4 gap-4 mb-6">
+      ${mc('Total Accounts',data.length,'',0)}
+      ${mc('Total ARR',inr(totalARR),'',1)}
+      ${mc('Total MRR',inr(totalARR/12),'',2)}
+      ${mc('At Risk',data.filter(a=>a.churn_risk==='High'||a.renewalStatus==='Critical').length,'High churn / Critical',4)}
     </div>
     <div class="flex flex-wrap gap-2 mb-4">
-      ${sel('af-am',   [{v:'',l:'All AMs'},...ams.map(a=>({v:a,l:a}))], '', 'w-auto')}
+      ${sel('af-am',   [{v:'',l:'All AMs'},...ams.map(a=>({v:a,l:a}))],  '', 'w-auto')}
       ${sel('af-csm',  [{v:'',l:'All CSMs'},...csms.map(c=>({v:c,l:c}))], '', 'w-auto')}
       ${sel('af-prod', [{v:'',l:'All Products'},...prods.map(p=>({v:p,l:p}))], '', 'w-auto')}
       ${sel('af-tier', [{v:'',l:'All Tiers'},...TIERS.map(t=>({v:t,l:t}))], '', 'w-auto')}
@@ -383,672 +413,705 @@ function renderAccList() {
     </div>
     <div id="acc-tbl"></div>
   `;
-  ['af-am','af-csm','af-prod','af-tier','af-health','af-risk','af-renew'].forEach(id => {
-    document.getElementById(id).onchange = filterAccs;
-  });
+  ['af-am','af-csm','af-prod','af-tier','af-health','af-risk','af-renew'].forEach(id=>document.getElementById(id).onchange=filterAccs);
   filterAccs();
 }
 
-function filterAccs() {
-  const am    = document.getElementById('af-am').value;
-  const csm   = document.getElementById('af-csm').value;
-  const prod  = document.getElementById('af-prod').value;
-  const tier  = document.getElementById('af-tier').value;
-  const hlth  = document.getElementById('af-health').value;
-  const risk  = document.getElementById('af-risk').value;
-  const renew = document.getElementById('af-renew').value;
-  let data = accs().map(enrichAcc);
-  if (am)    data = data.filter(a=>a.am_name===am);
-  if (csm)   data = data.filter(a=>a.csm_name===csm);
-  if (prod)  data = data.filter(a=>a.product===prod);
-  if (tier)  data = data.filter(a=>a.account_tier===tier);
-  if (hlth)  data = data.filter(a=>a.health_score===hlth);
-  if (risk)  data = data.filter(a=>a.churn_risk===risk);
-  if (renew) data = data.filter(a=>a.days!==null&&a.days>=0&&a.days<=parseInt(renew));
-
-  const totalARR = data.reduce((s,a)=>s+a.arr,0);
-  document.getElementById('acc-tbl').innerHTML = data.length===0
-    ? card(emptyState('No accounts match the filters.'), 'p-0 overflow-hidden')
-    : card(`
+function filterAccs(){
+  const am=document.getElementById('af-am').value, csm=document.getElementById('af-csm').value;
+  const prod=document.getElementById('af-prod').value, tier=document.getElementById('af-tier').value;
+  const hlth=document.getElementById('af-health').value, risk=document.getElementById('af-risk').value;
+  const renew=document.getElementById('af-renew').value;
+  let data=accs().map(enrichAcc);
+  if(am)    data=data.filter(a=>a.am_name===am);
+  if(csm)   data=data.filter(a=>a.csm_name===csm);
+  if(prod)  data=data.filter(a=>a.product===prod);
+  if(tier)  data=data.filter(a=>a.account_tier===tier);
+  if(hlth)  data=data.filter(a=>a.health_score===hlth);
+  if(risk)  data=data.filter(a=>a.churn_risk===risk);
+  if(renew) data=data.filter(a=>a.days!=null&&a.days>=0&&a.days<=parseInt(renew));
+  const total=data.reduce((s,a)=>s+a.arr,0);
+  document.getElementById('acc-tbl').innerHTML=data.length===0
+    ? card(emptyState('No accounts match the filters.'),'p-4')
+    : `<div class="card overflow-hidden">
       <div class="overflow-x-auto">
-      <table class="w-full text-sm min-w-[1000px]">
-        <thead class="bg-gray-50 border-b border-gray-100">
-          ${thRow(['Account','AM','CSM','ARR / MRR','Product','Renewal','Health','Risk','Tier',''])}
-        </thead>
-        <tbody class="divide-y divide-gray-50">
-          ${data.map(a=>`
-            <tr class="hover:bg-slate-50">
-              <td class="px-4 py-3 font-medium max-w-[180px] truncate">${a.account_name}</td>
-              <td class="px-4 py-3 text-gray-600 text-xs">${a.am_name}</td>
-              <td class="px-4 py-3 text-gray-600 text-xs">${a.csm_name}</td>
-              <td class="px-4 py-3">
-                <p class="font-semibold">${inr(a.arr)}</p>
-                <p class="text-xs text-gray-400">${inr(a.mrr)}/mo</p>
-              </td>
-              <td class="px-4 py-3 text-gray-600 text-xs">${a.product||'—'}</td>
-              <td class="px-4 py-3">
-                <p class="text-xs text-gray-600">${a.renewal_date||'—'}</p>
-                ${a.days!==null?`<p class="text-xs font-semibold ${a.days<0?'text-red-500':a.days<30?'text-red-500':a.days<90?'text-amber-500':'text-gray-400'}">${a.days<0?'Expired':a.days+'d left'}</p>`:''}
-                ${a.renewalStatus?renewalBadge(a.renewalStatus):''}
-              </td>
-              <td class="px-4 py-3">${healthBadge(a.health_score)}</td>
-              <td class="px-4 py-3">${riskBadge(a.churn_risk)}</td>
-              <td class="px-4 py-3">${tierBadge(a.account_tier)}</td>
-              <td class="px-4 py-3 whitespace-nowrap">
-                <button onclick="createOppFromAcc(${a.id})" class="text-emerald-600 hover:underline text-xs mr-2" title="Create renewal opportunity">→ Opp</button>
-                <button onclick="startEditAcc(${a.id})" class="text-blue-500 hover:underline text-xs mr-2">Edit</button>
-                <button onclick="delAcc(${a.id})" class="text-red-400 hover:underline text-xs">Del</button>
-              </td>
-            </tr>`).join('')}
+      <table class="w-full text-sm dt min-w-[1000px]">
+        <thead class="bg-slate-50 border-b border-slate-100">${thRow(['Account','AM','CSM','ARR / MRR','Product','Renewal','Health','Risk','Tier',''])}</thead>
+        <tbody class="divide-y divide-slate-50">
+          ${data.map(a=>`<tr>
+            <td class="px-4 py-3 font-semibold text-slate-800 max-w-[160px] truncate">${a.account_name}</td>
+            <td class="px-4 py-3 text-slate-500 text-xs">${a.am_name}</td>
+            <td class="px-4 py-3 text-slate-500 text-xs">${a.csm_name}</td>
+            <td class="px-4 py-3"><p class="font-bold text-slate-800">${inr(a.arr)}</p><p class="text-xs text-slate-400">${inr(a.mrr)}/mo</p></td>
+            <td class="px-4 py-3 text-slate-600 text-xs">${a.product||'—'}</td>
+            <td class="px-4 py-3">
+              <p class="text-xs text-slate-500">${a.renewal_date||'—'}</p>
+              ${a.days!=null?`<p class="text-xs font-bold ${a.days<0?'text-red-500':a.days<30?'text-red-500':a.days<90?'text-amber-500':'text-slate-400'}">${a.days<0?'Expired':a.days+'d left'}</p>`:''}
+              ${renewBadge(a.renewalStatus)}
+            </td>
+            <td class="px-4 py-3">${healthBadge(a.health_score)}</td>
+            <td class="px-4 py-3">${riskBadge(a.churn_risk)}</td>
+            <td class="px-4 py-3">${tierBadge(a.account_tier)}</td>
+            <td class="px-4 py-3 whitespace-nowrap">
+              <button onclick="createOppFromAcc(${a.id})" class="text-emerald-600 hover:underline text-xs mr-2" title="Create renewal opportunity">→ Opp</button>
+              <button onclick="startEditAcc(${a.id})" class="text-indigo-500 hover:underline text-xs mr-2">Edit</button>
+              <button onclick="delAcc(${a.id})" class="text-red-400 hover:underline text-xs">Del</button>
+            </td>
+          </tr>`).join('')}
         </tbody>
-        <tfoot class="bg-gray-50 border-t border-gray-100">
+        <tfoot class="bg-slate-50 border-t border-slate-100">
           <tr>
-            <td colspan="3" class="px-4 py-3 text-xs text-gray-400">${data.length} account${data.length!==1?'s':''}</td>
-            <td class="px-4 py-3 font-bold">${inr(totalARR)}</td>
+            <td colspan="3" class="px-4 py-3 text-xs text-slate-400">${data.length} account${data.length!==1?'s':''}</td>
+            <td class="px-4 py-3 font-bold text-slate-700">${inr(total)}</td>
             <td colspan="6"></td>
           </tr>
         </tfoot>
       </table>
-      </div>`, 'overflow-hidden');
+      </div>
+    </div>`;
 }
 
-function startEditAcc(id) { accEditId=id; accMode='edit'; render(); }
-function delAcc(id) {
-  if (!confirm('Delete this account?')) return;
-  setAccs(accs().filter(a=>a.id!==id));
-  toast('Account deleted'); render();
+function startEditAcc(id){accEditId=id;accMode='edit';render();}
+function delAcc(id){
+  if(!confirm('Delete this account?'))return;
+  setAccs(accs().filter(a=>a.id!==id)); toast('Account deleted'); render();
 }
 
-// ── Add / Edit Form ────────────────────────────────
-function renderAccForm() {
-  const isEdit = accMode==='edit';
-  const a = isEdit ? accs().find(x=>x.id===accEditId) : null;
-  const c = cfg();
-  const reps = c.reps||[];
-  const amReps  = reps.filter(r=>r.type==='AM').map(r=>r.name);
-  const csmReps = reps.filter(r=>r.type==='CSM').map(r=>r.name);
-
-  document.getElementById('acc-body').innerHTML = card(`
-    <div class="flex items-center justify-between mb-5">
-      <h2 class="text-base font-semibold">${isEdit?'Edit Account':'New Account'}</h2>
-      <button onclick="accMode='list';render()" class="text-xs text-gray-400 hover:text-gray-600">← Back</button>
+function renderAccForm(){
+  const isEdit=accMode==='edit', a=isEdit?accs().find(x=>x.id===accEditId):null;
+  const c=cfg(), reps=c.reps||[];
+  const amReps=reps.filter(r=>r.type==='AM').map(r=>r.name);
+  const csmReps=reps.filter(r=>r.type==='CSM').map(r=>r.name);
+  document.getElementById('acc-body').innerHTML=card(`
+    <div class="flex items-center justify-between mb-6">
+      <h2 class="text-base font-bold text-slate-800">${isEdit?'Edit Account':'New Account'}</h2>
+      <button onclick="accMode='list';render()" class="text-xs text-slate-400 hover:text-slate-600">← Back</button>
     </div>
     <div class="space-y-4">
+      ${frow(lbl('Account Name *')+inp('a-name','text',a?.account_name||''), lbl('Product *')+inp('a-product','text',a?.product||''))}
       ${frow(
-        lbl('Account Name *') + inp('a-name','text', a?.account_name||''),
-        lbl('Product *')       + inp('a-product','text', a?.product||'')
+        lbl('AM Name *')+(amReps.length?sel('a-am',[{v:'',l:'Select AM'},...amReps.map(n=>({v:n,l:n}))],a?.am_name||''):inp('a-am','text',a?.am_name||'')),
+        lbl('CSM Name *')+(csmReps.length?sel('a-csm',[{v:'',l:'Select CSM'},...csmReps.map(n=>({v:n,l:n}))],a?.csm_name||''):inp('a-csm','text',a?.csm_name||''))
+      )}
+      ${frow(lbl('Account ARR (₹) *')+inp('a-arr','number',a?.arr||''), lbl('Renewal Date *')+inp('a-renewal','date',a?.renewal_date||''))}
+      ${frow(
+        lbl('Account Tier')+sel('a-tier',[{v:'',l:'Select tier'},...TIERS.map(t=>({v:t,l:t}))],a?.account_tier||''),
+        lbl('Health Score')+sel('a-health',[{v:'',l:'Select health'},...HEALTH.map(h=>({v:h,l:h}))],a?.health_score||'')
       )}
       ${frow(
-        lbl('AM Name *') + (amReps.length
-          ? sel('a-am', [{v:'',l:'Select AM'},...amReps.map(n=>({v:n,l:n}))], a?.am_name||'')
-          : inp('a-am','text', a?.am_name||'', '', 'placeholder="AM name"')),
-        lbl('CSM Name *') + (csmReps.length
-          ? sel('a-csm', [{v:'',l:'Select CSM'},...csmReps.map(n=>({v:n,l:n}))], a?.csm_name||'')
-          : inp('a-csm','text', a?.csm_name||'', '', 'placeholder="CSM name"'))
-      )}
-      ${frow(
-        lbl('Account ARR (₹) *') + inp('a-arr','number', a?.arr||''),
-        lbl('Renewal Date *')     + inp('a-renewal','date', a?.renewal_date||'')
-      )}
-      ${frow(
-        lbl('Account Tier') + sel('a-tier', [{v:'',l:'Select tier'},...TIERS.map(t=>({v:t,l:t}))], a?.account_tier||''),
-        lbl('Health Score') + sel('a-health', [{v:'',l:'Select health'},...HEALTH.map(h=>({v:h,l:h}))], a?.health_score||'')
-      )}
-      ${frow(
-        lbl('Churn Risk') + sel('a-risk', [{v:'',l:'Select risk'},...RISK.map(r=>({v:r,l:r}))], a?.churn_risk||''),
-        lbl('Notes')       + inp('a-notes','text', a?.notes||'', '', 'placeholder="Optional notes"')
+        lbl('Churn Risk')+sel('a-risk',[{v:'',l:'Select risk'},...RISK.map(r=>({v:r,l:r}))],a?.churn_risk||''),
+        lbl('Notes')+inp('a-notes','text',a?.notes||'','','placeholder="Optional"')
       )}
     </div>
     <div class="flex gap-3 mt-6">
-      <button onclick="saveAcc(${isEdit?accEditId:'null'})" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg text-sm font-medium">
-        ${isEdit?'Save Changes':'Add Account'}
-      </button>
-      <button onclick="accMode='list';render()" class="border border-gray-200 text-gray-600 hover:bg-gray-50 px-5 py-2 rounded-lg text-sm">Cancel</button>
+      <button onclick="saveAcc(${isEdit?accEditId:'null'})" class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-5 py-2 rounded-xl text-sm font-semibold shadow shadow-indigo-200">${isEdit?'Save Changes':'Add Account'}</button>
+      <button onclick="accMode='list';render()" class="border border-slate-200 text-slate-600 hover:bg-slate-50 px-5 py-2 rounded-xl text-sm">Cancel</button>
     </div>
-  `, 'p-6');
+  `,'p-6');
 }
 
-function saveAcc(eid) {
-  const name    = document.getElementById('a-name').value.trim();
-  const product = document.getElementById('a-product').value.trim();
-  const am      = document.getElementById('a-am').value.trim();
-  const csm     = document.getElementById('a-csm').value.trim();
-  const arr     = parseFloat(document.getElementById('a-arr').value);
-  const renewal = document.getElementById('a-renewal').value;
-  if (!name||!am||!csm||isNaN(arr)||!renewal) { alert('Fill in all required fields.'); return; }
-  const rec = {
-    account_name:a?.account_name, am_name:am, csm_name:csm, arr,
-    product, renewal_date:renewal,
-    account_tier: document.getElementById('a-tier').value||'',
-    health_score: document.getElementById('a-health').value||'',
-    churn_risk:   document.getElementById('a-risk').value||'',
-    notes:        document.getElementById('a-notes').value.trim(),
-  };
-  rec.account_name = name;
-  let data = accs();
-  if (eid!==null) {
-    data = data.map(a=>a.id===eid ? {...a,...rec} : a);
-  } else {
-    rec.id = uid(data);
-    data.push(rec);
-  }
-  setAccs(data);
-  accMode='list'; toast(eid?'Account updated':'Account added'); go('accounts');
+function saveAcc(eid){
+  const name=document.getElementById('a-name').value.trim();
+  const product=document.getElementById('a-product').value.trim();
+  const am=document.getElementById('a-am').value.trim();
+  const csm=document.getElementById('a-csm').value.trim();
+  const arr=parseFloat(document.getElementById('a-arr').value);
+  const renewal=document.getElementById('a-renewal').value;
+  if(!name||!am||!csm||isNaN(arr)||!renewal){alert('Fill in all required fields.');return;}
+  const rec={account_name:name,am_name:am,csm_name:csm,arr,product,renewal_date:renewal,
+    account_tier:document.getElementById('a-tier').value||'',
+    health_score:document.getElementById('a-health').value||'',
+    churn_risk:document.getElementById('a-risk').value||'',
+    notes:document.getElementById('a-notes').value.trim()};
+  let data=accs();
+  if(eid!==null){data=data.map(a=>a.id===eid?{...a,...rec}:a);}
+  else{rec.id=uid(data);data.push(rec);}
+  setAccs(data); accMode='list'; toast(eid?'Account updated':'Account added'); go('accounts');
 }
 
-// ── CSV Import ────────────────────────────────────
-function renderAccImport() {
-  document.getElementById('acc-body').innerHTML = card(`
+// ── CSV Import ──
+function renderAccImport(){
+  document.getElementById('acc-body').innerHTML=card(`
     <div class="flex items-center justify-between mb-5">
-      <h2 class="text-base font-semibold">Import Accounts from CSV</h2>
-      <button onclick="accMode='list';render()" class="text-xs text-gray-400 hover:text-gray-600">← Back</button>
+      <h2 class="text-base font-bold text-slate-800">Import Accounts from CSV</h2>
+      <button onclick="accMode='list';render()" class="text-xs text-slate-400 hover:text-slate-600">← Back</button>
     </div>
     <div id="csv-step1">
-      <div class="drop-zone border-2 border-dashed border-gray-200 rounded-xl p-10 text-center cursor-pointer hover:border-blue-300 hover:bg-blue-50 transition-colors"
-           onclick="document.getElementById('csv-file-inp').click()"
+      <div class="drop-zone border-2 border-dashed border-slate-200 rounded-2xl p-12 text-center cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/40 transition-all"
+           onclick="document.getElementById('csv-fi').click()"
            ondragover="event.preventDefault();this.classList.add('drag-over')"
            ondragleave="this.classList.remove('drag-over')"
            ondrop="event.preventDefault();this.classList.remove('drag-over');handleFileDrop(event)">
-        <p class="text-3xl mb-2">📂</p>
-        <p class="text-sm font-medium text-gray-600">Drop your CSV here or <span class="text-blue-600 underline">browse</span></p>
-        <p class="text-xs text-gray-400 mt-1">Columns: Account Name, AM Name, CSM Name, ARR, Product, Renewal Date (+ optional fields)</p>
+        <div class="w-14 h-14 rounded-2xl bg-indigo-100 flex items-center justify-center text-2xl mx-auto mb-3">📂</div>
+        <p class="text-sm font-semibold text-slate-700">Drop your CSV here or <span class="text-indigo-600">browse</span></p>
+        <p class="text-xs text-slate-400 mt-1">Required: Account Name, AM, CSM, ARR, Product, Renewal Date</p>
       </div>
-      <input type="file" id="csv-file-inp" accept=".csv" class="hidden" onchange="handleFileInput(this)" />
-      <p class="text-xs text-gray-400 mt-3 text-center">
-        Don't have a CSV? <button onclick="downloadSampleCSV()" class="text-blue-500 hover:underline">Download sample template</button>
+      <input type="file" id="csv-fi" accept=".csv" class="hidden" onchange="handleFileInput(this)"/>
+      <p class="text-xs text-slate-400 mt-4 text-center">
+        Need a template? <button onclick="downloadSampleCSV()" class="text-indigo-500 hover:underline font-medium">Download sample CSV</button>
       </p>
     </div>
     <div id="csv-step2" class="hidden"></div>
-  `, 'p-6');
+  `,'p-6');
 }
 
-function handleFileDrop(e) {
-  const file = e.dataTransfer.files[0];
-  if (file) processCSVFile(file);
-}
-function handleFileInput(inp) {
-  if (inp.files[0]) processCSVFile(inp.files[0]);
-}
-
-function processCSVFile(file) {
-  const reader = new FileReader();
-  reader.onload = e => {
-    const parsed = parseCSV(e.target.result);
-    if (!parsed.headers.length) { toast('Could not parse CSV — check the file.'); return; }
-    csvParsed = parsed;
-    csvMapping = autoMapCols(parsed.headers);
-    renderMappingUI(file.name, parsed);
+function handleFileDrop(e){const f=e.dataTransfer.files[0]; if(f) processCSVFile(f);}
+function handleFileInput(i){if(i.files[0]) processCSVFile(i.files[0]);}
+function processCSVFile(file){
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const parsed=parseCSV(e.target.result);
+    if(!parsed.headers.length){toast('Could not parse CSV.');return;}
+    csvParsed=parsed; csvMapping=autoMapCols(parsed.headers);
+    renderMappingUI(file.name,parsed);
   };
   reader.readAsText(file);
 }
-
-function parseCSV(text) {
-  const lines = text.trim().split(/\r?\n/);
-  if (!lines.length) return { headers:[], rows:[] };
-  const headers = splitCSVLine(lines[0]);
-  const rows = lines.slice(1).filter(l=>l.trim()).map(l => {
-    const vals = splitCSVLine(l);
-    return headers.reduce((obj,h,i) => { obj[h] = (vals[i]||'').trim(); return obj; }, {});
+function parseCSV(text){
+  const lines=text.trim().split(/\r?\n/); if(!lines.length) return{headers:[],rows:[]};
+  const headers=splitLine(lines[0]);
+  const rows=lines.slice(1).filter(l=>l.trim()).map(l=>{
+    const vals=splitLine(l);
+    return headers.reduce((o,h,i)=>{o[h]=(vals[i]||'').trim();return o;},{});
   });
-  return { headers, rows };
+  return{headers,rows};
 }
-
-function splitCSVLine(line) {
-  const result = []; let cur = '', inQ = false;
-  for (let i=0; i<line.length; i++) {
-    const ch = line[i];
-    if (ch==='"') { inQ=!inQ; }
-    else if (ch===','&&!inQ) { result.push(cur.trim()); cur=''; }
-    else { cur+=ch; }
-  }
-  result.push(cur.trim());
-  return result.map(v=>v.replace(/^"|"$/g,''));
+function splitLine(line){
+  const r=[]; let cur='',inQ=false;
+  for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'){inQ=!inQ;}else if(c===','&&!inQ){r.push(cur.trim());cur='';}else{cur+=c;}}
+  r.push(cur.trim());
+  return r.map(v=>v.replace(/^"|"$/g,''));
 }
-
-function autoMapCols(headers) {
-  const norm = h => h.toLowerCase().replace(/[^a-z0-9]/g,' ').trim();
-  const mapping = {};
-  ACC_FIELDS.forEach(f => {
-    const found = headers.find(h => f.aliases.some(a => norm(h)===a || norm(h).includes(a)));
-    mapping[f.key] = found || '';
+function autoMapCols(headers){
+  const norm=h=>h.toLowerCase().replace(/[^a-z0-9]/g,' ').trim();
+  const m={};
+  ACC_FIELDS.forEach(f=>{
+    const found=headers.find(h=>f.aliases.some(a=>norm(h)===a||norm(h).includes(a)));
+    m[f.key]=found||'';
   });
-  return mapping;
+  return m;
 }
-
-function renderMappingUI(filename, parsed) {
-  const step2 = document.getElementById('csv-step2');
+function renderMappingUI(fname,parsed){
   document.getElementById('csv-step1').classList.add('hidden');
-  step2.classList.remove('hidden');
-
-  const previewRows = parsed.rows.slice(0,3);
-  const colOpts = [{v:'',l:'— skip —'}, ...parsed.headers.map(h=>({v:h,l:h}))];
-
-  step2.innerHTML = `
-    <div class="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-5 flex items-center gap-3">
-      <span class="text-lg">✅</span>
-      <div>
-        <p class="text-sm font-medium text-blue-800">${filename} — ${parsed.rows.length} rows detected</p>
-        <p class="text-xs text-blue-600">Map your CSV columns to the fields below, then click Import.</p>
-      </div>
+  const s2=document.getElementById('csv-step2'); s2.classList.remove('hidden');
+  const colOpts=[{v:'',l:'— skip —'},...parsed.headers.map(h=>({v:h,l:h}))];
+  const prev=parsed.rows.slice(0,3);
+  s2.innerHTML=`
+    <div class="bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-3 mb-5 flex items-center gap-3">
+      <span class="text-xl">✅</span>
+      <div><p class="text-sm font-semibold text-indigo-800">${fname} — ${parsed.rows.length} rows detected</p>
+      <p class="text-xs text-indigo-600">Map your columns, then import.</p></div>
     </div>
     <div class="grid grid-cols-2 gap-5 mb-6">
       <div>
-        <p class="text-sm font-semibold text-gray-700 mb-3">Column Mapping</p>
-        <table class="w-full text-sm border border-gray-100 rounded-lg overflow-hidden">
-          <thead class="bg-gray-50"><tr>
-            <th class="text-left px-3 py-2 text-xs font-semibold text-gray-500">Field</th>
-            <th class="text-left px-3 py-2 text-xs font-semibold text-gray-500">CSV Column</th>
+        <p class="text-sm font-semibold text-slate-700 mb-3">Column Mapping</p>
+        <table class="w-full text-sm border border-slate-100 rounded-xl overflow-hidden">
+          <thead class="bg-slate-50"><tr>
+            <th class="text-left px-3 py-2 text-xs font-semibold text-slate-500">Field</th>
+            <th class="text-left px-3 py-2 text-xs font-semibold text-slate-500">CSV Column</th>
           </tr></thead>
-          <tbody class="divide-y divide-gray-50">
-            ${ACC_FIELDS.map(f=>`
-              <tr class="${f.required?'':'bg-gray-50/50'}">
-                <td class="px-3 py-2 text-xs font-medium ${f.required?'text-gray-800':'text-gray-500'}">${f.label}${f.required?' <span class="text-red-400">*</span>':''}</td>
-                <td class="px-3 py-2">${sel('map-'+f.key, colOpts, csvMapping[f.key]||'', 'text-xs py-1')}</td>
-              </tr>`).join('')}
+          <tbody class="divide-y divide-slate-50">
+            ${ACC_FIELDS.map(f=>`<tr class="${f.required?'':'opacity-70'}">
+              <td class="px-3 py-2 text-xs font-medium text-slate-700">${f.label}${f.required?' <span class="text-red-400">*</span>':''}</td>
+              <td class="px-3 py-2">${sel('map-'+f.key,colOpts,csvMapping[f.key]||'','text-xs py-1 w-full')}</td>
+            </tr>`).join('')}
           </tbody>
         </table>
       </div>
       <div>
-        <p class="text-sm font-semibold text-gray-700 mb-3">Preview (first 3 rows)</p>
-        <div class="overflow-x-auto border border-gray-100 rounded-lg">
+        <p class="text-sm font-semibold text-slate-700 mb-3">Preview (first 3 rows)</p>
+        <div class="overflow-x-auto border border-slate-100 rounded-xl">
           <table class="text-xs w-full">
-            <thead class="bg-gray-50"><tr>
-              ${parsed.headers.map(h=>`<th class="px-2 py-2 text-left font-medium text-gray-500 whitespace-nowrap">${h}</th>`).join('')}
-            </tr></thead>
-            <tbody class="divide-y divide-gray-50">
-              ${previewRows.map(r=>`<tr>${parsed.headers.map(h=>`<td class="px-2 py-1.5 text-gray-600 whitespace-nowrap">${r[h]||''}</td>`).join('')}</tr>`).join('')}
-            </tbody>
+            <thead class="bg-slate-50"><tr>${parsed.headers.map(h=>`<th class="px-2 py-2 text-left font-medium text-slate-500 whitespace-nowrap">${h}</th>`).join('')}</tr></thead>
+            <tbody>${prev.map(r=>`<tr class="border-t border-slate-50">${parsed.headers.map(h=>`<td class="px-2 py-1.5 text-slate-600 whitespace-nowrap">${r[h]||''}</td>`).join('')}</tr>`).join('')}</tbody>
           </table>
         </div>
       </div>
     </div>
     <div class="flex gap-3">
-      <button onclick="executeImport()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg text-sm font-medium">
-        Import ${parsed.rows.length} Accounts
-      </button>
-      <button onclick="accMode='import';render()" class="border border-gray-200 text-gray-600 hover:bg-gray-50 px-5 py-2 rounded-lg text-sm">← Re-upload</button>
-      <button onclick="accMode='list';render()" class="text-gray-400 hover:text-gray-600 px-4 py-2 text-sm">Cancel</button>
-    </div>
-  `;
+      <button onclick="executeImport()" class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-2 rounded-xl text-sm font-semibold shadow shadow-indigo-200">Import ${parsed.rows.length} Accounts</button>
+      <button onclick="accMode='import';render()" class="border border-slate-200 text-slate-600 hover:bg-slate-50 px-5 py-2 rounded-xl text-sm">← Re-upload</button>
+      <button onclick="accMode='list';render()" class="text-slate-400 hover:text-slate-600 text-sm px-4 py-2">Cancel</button>
+    </div>`;
 }
-
-function executeImport() {
-  // Read mapping from selects
-  const mapping = {};
-  ACC_FIELDS.forEach(f => {
-    const el = document.getElementById('map-'+f.key);
-    if (el) mapping[f.key] = el.value;
-  });
-
-  // Validate required fields are mapped
-  const missing = ACC_FIELDS.filter(f=>f.required&&!mapping[f.key]).map(f=>f.label);
-  if (missing.length) { alert('Please map required fields: ' + missing.join(', ')); return; }
-
-  const existing = accs();
-  let added = 0, skipped = 0;
-  const imported = csvParsed.rows.map(row => {
-    const arrRaw = row[mapping.arr]||'';
-    const arr = parseFloat(arrRaw.replace(/[^0-9.]/g,''));
-    if (!row[mapping.account_name]) { skipped++; return null; }
+function executeImport(){
+  const mapping={};
+  ACC_FIELDS.forEach(f=>{const el=document.getElementById('map-'+f.key);if(el)mapping[f.key]=el.value;});
+  const missing=ACC_FIELDS.filter(f=>f.required&&!mapping[f.key]).map(f=>f.label);
+  if(missing.length){alert('Map required fields: '+missing.join(', '));return;}
+  const existing=accs(); let added=0;
+  const imported=csvParsed.rows.map(row=>{
+    if(!row[mapping.account_name]){return null;}
     added++;
-    return {
-      id: uid([...existing, ...csvParsed.rows.slice(0,added).filter(Boolean).map((_,i)=>({id:i}))]),
-      account_name:  row[mapping.account_name]  || '',
-      am_name:       row[mapping.am_name]        || '',
-      csm_name:      row[mapping.csm_name]       || '',
-      arr:           isNaN(arr) ? 0 : arr,
-      product:       mapping.product  ? row[mapping.product]  || '' : '',
-      renewal_date:  mapping.renewal_date ? row[mapping.renewal_date] || '' : '',
-      account_tier:  mapping.account_tier  ? row[mapping.account_tier]  || '' : '',
-      health_score:  mapping.health_score  ? row[mapping.health_score]  || '' : '',
-      churn_risk:    mapping.churn_risk    ? row[mapping.churn_risk]    || '' : '',
-      notes:         mapping.notes         ? row[mapping.notes]         || '' : '',
-    };
+    const arrRaw=row[mapping.arr]||'';
+    const arr=parseFloat(arrRaw.replace(/[^0-9.]/g,''));
+    return{account_name:row[mapping.account_name]||'',am_name:row[mapping.am_name]||'',csm_name:row[mapping.csm_name]||'',
+      arr:isNaN(arr)?0:arr,product:mapping.product?row[mapping.product]||'':'',
+      renewal_date:mapping.renewal_date?row[mapping.renewal_date]||'':'',
+      account_tier:mapping.account_tier?row[mapping.account_tier]||'':'',
+      health_score:mapping.health_score?row[mapping.health_score]||'':'',
+      churn_risk:mapping.churn_risk?row[mapping.churn_risk]||'':'',
+      notes:mapping.notes?row[mapping.notes]||'':''};
   }).filter(Boolean);
-
-  // Re-assign IDs to avoid collisions
-  const maxId = existing.length ? Math.max(...existing.map(a=>a.id)) : 0;
-  imported.forEach((a,i) => { a.id = maxId + i + 1; });
-
-  setAccs([...existing, ...imported]);
-  csvParsed = null; csvMapping = {};
-  toast(`Imported ${added} accounts${skipped?' ('+skipped+' skipped)':''}`);
-  accMode='list'; go('accounts');
+  const maxId=existing.length?Math.max(...existing.map(a=>a.id)):0;
+  imported.forEach((a,i)=>{a.id=maxId+i+1;});
+  setAccs([...existing,...imported]);
+  csvParsed=null; csvMapping={};
+  toast(`Imported ${added} accounts`); accMode='list'; go('accounts');
 }
-
-// ── CSV utilities ──────────────────────────────────
-function downloadSampleCSV() {
-  const headers = ['Account Name','AM Name','CSM Name','ARR','Product','Renewal Date','Account Tier','Health Score','Churn Risk','Notes'];
-  const rows = [
-    ['Acme Corp','Rahul Sharma','Priya Patel','1200000','Enterprise Suite','2025-09-30','Enterprise','Green','Low','Key account - upsell potential'],
-    ['TechCo Ltd','Rahul Sharma','Amit Singh','850000','Pro Plan','2025-07-15','Mid-Market','Yellow','Medium','At risk - check in needed'],
-    ['StartupXYZ','Neha Gupta','Priya Patel','240000','Starter','2025-06-01','SMB','Red','High','Considering competitors'],
-  ];
-  const csv = [headers,...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
-  const blob = new Blob([csv],{type:'text/csv'});
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a'); a.href=url; a.download='accounts_template.csv'; a.click();
-  URL.revokeObjectURL(url);
+function downloadSampleCSV(){
+  const h=['Account Name','AM Name','CSM Name','ARR','Product','Renewal Date','Account Tier','Health Score','Churn Risk','Notes'];
+  const r=[['Acme Corp','Rahul Sharma','Priya Patel','1200000','Enterprise Suite','2025-09-30','Enterprise','Green','Low','Key account'],
+    ['TechCo Ltd','Rahul Sharma','Amit Singh','850000','Pro Plan','2025-07-15','Mid-Market','Yellow','Medium','At risk'],
+    ['StartupXYZ','Neha Gupta','Priya Patel','240000','Starter','2025-06-01','SMB','Red','High','Considering competitors']];
+  const csv=[h,...r].map(row=>row.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download='accounts_template.csv'; a.click();
 }
-
-function exportAccs() {
-  const data = accs().map(enrichAcc);
-  if (!data.length) { toast('No accounts to export.'); return; }
-  const headers = ['Account Name','AM Name','CSM Name','ARR','MRR','Product','Renewal Date','Renewal Status','Days to Renewal','Renewal Quarter','Account Tier','Health Score','Churn Risk','Notes'];
-  const rows = data.map(a=>[
-    a.account_name,a.am_name,a.csm_name,a.arr,(a.mrr).toFixed(0),
-    a.product,a.renewal_date,a.renewalStatus,a.days??'',
-    a.renewalQ?`${a.renewalQ} ${a.renewalFy}`:'',
-    a.account_tier||'',a.health_score||'',a.churn_risk||'',a.notes||''
-  ]);
-  const csv = [headers,...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
-  const blob = new Blob([csv],{type:'text/csv'});
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a'); a.href=url; a.download='accounts_export.csv'; a.click();
-  URL.revokeObjectURL(url);
+function exportAccs(){
+  const data=accs().map(enrichAcc); if(!data.length){toast('No accounts to export.');return;}
+  const h=['Account Name','AM Name','CSM Name','ARR','MRR','Product','Renewal Date','Renewal Status','Days to Renewal','Account Tier','Health Score','Churn Risk','Notes'];
+  const r=data.map(a=>[a.account_name,a.am_name,a.csm_name,a.arr,(a.mrr).toFixed(0),a.product,a.renewal_date,a.renewalStatus,a.days??'',a.account_tier||'',a.health_score||'',a.churn_risk||'',a.notes||'']);
+  const csv=[h,...r].map(row=>row.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download='accounts_export.csv'; a.click();
   toast('Exported!');
 }
-
-// ── Create Opportunity from Account ───────────────
-function createOppFromAcc(id) {
-  const a = accs().find(x=>x.id===id);
-  if (!a) return;
-  const rd = a.renewal_date ? new Date(a.renewal_date) : new Date();
-  window._prefillOpp = {
-    opportunity_name: `${a.account_name} — Renewal`,
-    client_name: a.account_name,
-    rep_name: a.am_name,
-    value: a.arr,
-    close_month_idx: rd.getMonth(),
-    close_year: isNaN(rd) ? new Date().getFullYear() : rd.getFullYear(),
-    status: 'Open',
-  };
+function createOppFromAcc(id){
+  const a=accs().find(x=>x.id===id); if(!a)return;
+  const rd=a.renewal_date?new Date(a.renewal_date):new Date();
+  window._prefillOpp={opportunity_name:`${a.account_name} — Renewal`,client_name:a.account_name,rep_name:a.am_name,value:a.arr,close_month_idx:rd.getMonth(),close_year:isNaN(rd)?new Date().getFullYear():rd.getFullYear(),status:'Open'};
   oppMode='add'; go('opportunities');
 }
 
-// ════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════
+//  REPORTS
+// ═══════════════════════════════════════════════════
+function reports(){
+  const allA=accs().map(enrichAcc), allO=opps(), allC=cols(), c=cfg();
+  const ams=[...new Set(allA.map(a=>a.am_name).filter(Boolean))].sort();
+  const csms=[...new Set(allA.map(a=>a.csm_name).filter(Boolean))].sort();
+  const fys=[...new Set(allO.map(o=>o.fy))].sort().reverse();
+
+  document.getElementById('app').innerHTML=`
+    ${pageHeader('Reports','Analytics across accounts, pipeline & collections')}
+
+    <div class="card p-4 mb-6 flex flex-wrap gap-3 items-center">
+      <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Filters</span>
+      ${sel('rp-am',  [{v:'',l:'All AMs'},...ams.map(a=>({v:a,l:a}))], '', 'w-auto')}
+      ${sel('rp-csm', [{v:'',l:'All CSMs'},...csms.map(c=>({v:c,l:c}))], '', 'w-auto')}
+      ${sel('rp-fy',  [{v:'',l:'All FY'},...fys.map(f=>({v:f,l:f}))], '', 'w-auto')}
+      ${sel('rp-tier',[{v:'',l:'All Tiers'},...TIERS.map(t=>({v:t,l:t}))], '', 'w-auto')}
+      ${sel('rp-risk',[{v:'',l:'All Risk'},...RISK.map(r=>({v:r,l:r}))], '', 'w-auto')}
+    </div>
+
+    ${sectionHead('Account Intelligence','🏢')}
+    <div class="grid grid-cols-3 gap-4 mb-5">
+      ${chartCard('ARR by Product','rp-prod',200,0)}
+      ${chartCard('ARR by Account Tier','rp-tier',200,1)}
+      ${chartCard('Account Health Distribution','rp-health',200,2)}
+    </div>
+
+    ${sectionHead('Risk & Renewal Analysis','🔔')}
+    <div class="grid grid-cols-3 gap-4 mb-5">
+      ${chartCard('Churn Risk Distribution','rp-risk',200,3)}
+      ${chartCard('ARR by Renewal Status','rp-renew-st',200,4)}
+      ${chartCard('ARR by AM','rp-am-arr',200,5)}
+    </div>
+    <div class="grid grid-cols-1 gap-4 mb-5">
+      ${chartCard('Renewal ARR Calendar — Next 12 Months','rp-cal',140,0)}
+    </div>
+
+    ${sectionHead('Pipeline Analysis','🎯')}
+    <div class="grid grid-cols-2 gap-4 mb-5">
+      ${chartCard('Pipeline by Status','rp-pipe-st',220,2)}
+      ${chartCard('Pipeline by Quarter','rp-pipe-q',220,0)}
+    </div>
+
+    ${sectionHead('Collections & Incentives','💰')}
+    <div class="grid grid-cols-2 gap-4 mb-5">
+      ${chartCard('Monthly Collections Trend','rp-coll-trend',220,1)}
+      ${chartCard('Incentive Payout by Rep','rp-incentive',220,3)}
+    </div>
+  `;
+
+  ['rp-am','rp-csm','rp-fy','rp-tier','rp-risk'].forEach(id=>document.getElementById(id).onchange=renderReportCharts);
+  renderReportCharts();
+}
+
+function renderReportCharts(){
+  // Destroy old report charts
+  Object.keys(charts).filter(k=>k.startsWith('rp-')).forEach(k=>{charts[k].destroy();delete charts[k];});
+
+  const selAM   = document.getElementById('rp-am')?.value||'';
+  const selCSM  = document.getElementById('rp-csm')?.value||'';
+  const selFY   = document.getElementById('rp-fy')?.value||'';
+  const selTier = document.getElementById('rp-tier')?.value||'';
+  const selRisk = document.getElementById('rp-risk')?.value||'';
+
+  let filtA=accs().map(enrichAcc);
+  if(selAM)   filtA=filtA.filter(a=>a.am_name===selAM);
+  if(selCSM)  filtA=filtA.filter(a=>a.csm_name===selCSM);
+  if(selTier) filtA=filtA.filter(a=>a.account_tier===selTier);
+  if(selRisk) filtA=filtA.filter(a=>a.churn_risk===selRisk);
+
+  let filtO=opps();
+  if(selFY)  filtO=filtO.filter(o=>o.fy===selFY);
+  if(selAM)  filtO=filtO.filter(o=>o.rep_name===selAM);
+
+  const filtC=cols();
+  const chartCfg={responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{boxWidth:10,padding:10,font:{size:11}}}}};
+
+  // 1. ARR by Product (horizontal bar)
+  if(document.getElementById('rp-prod')){
+    const prodMap={};
+    filtA.forEach(a=>{if(a.product) prodMap[a.product]=(prodMap[a.product]||0)+a.arr;});
+    const sorted=Object.entries(prodMap).sort((a,b)=>b[1]-a[1]).slice(0,10);
+    charts['rp-prod']=new Chart(document.getElementById('rp-prod'),{
+      type:'bar',
+      data:{labels:sorted.map(x=>x[0]),datasets:[{label:'ARR',data:sorted.map(x=>x[1]),backgroundColor:PALETTE.slice(0,sorted.length),borderRadius:6,borderSkipped:false}]},
+      options:{...chartCfg,indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{ticks:{callback:compact},grid:{color:'#f1f5f9'}},y:{grid:{display:false}}}},
+    });
+  }
+
+  // 2. ARR by Tier (donut)
+  if(document.getElementById('rp-tier')){
+    const tierMap={Enterprise:0,'Mid-Market':0,SMB:0,Other:0};
+    filtA.forEach(a=>{tierMap[a.account_tier||'Other']+=a.arr;});
+    const keys=Object.keys(tierMap).filter(k=>tierMap[k]>0);
+    charts['rp-tier']=new Chart(document.getElementById('rp-tier'),{
+      type:'doughnut',
+      data:{labels:keys,datasets:[{data:keys.map(k=>tierMap[k]),backgroundColor:['#8b5cf6','#3b82f6','#94a3b8','#e2e8f0'],borderWidth:2,hoverOffset:8}]},
+      options:{...chartCfg,cutout:'60%'},
+    });
+  }
+
+  // 3. Health Distribution (donut - count)
+  if(document.getElementById('rp-health')){
+    const hm={Green:0,Yellow:0,Red:0,Unknown:0};
+    filtA.forEach(a=>{hm[a.health_score||'Unknown']++;});
+    const keys=Object.keys(hm).filter(k=>hm[k]>0);
+    charts['rp-health']=new Chart(document.getElementById('rp-health'),{
+      type:'doughnut',
+      data:{labels:keys,datasets:[{data:keys.map(k=>hm[k]),backgroundColor:['#10b981','#f59e0b','#ef4444','#e2e8f0'],borderWidth:2,hoverOffset:8}]},
+      options:{...chartCfg,cutout:'60%'},
+    });
+  }
+
+  // 4. Churn Risk (donut - count)
+  if(document.getElementById('rp-risk')){
+    const rm={Low:0,Medium:0,High:0,Unknown:0};
+    filtA.forEach(a=>{rm[a.churn_risk||'Unknown']++;});
+    const keys=Object.keys(rm).filter(k=>rm[k]>0);
+    charts['rp-risk']=new Chart(document.getElementById('rp-risk'),{
+      type:'doughnut',
+      data:{labels:keys,datasets:[{data:keys.map(k=>rm[k]),backgroundColor:['#10b981','#f59e0b','#ef4444','#e2e8f0'],borderWidth:2,hoverOffset:8}]},
+      options:{...chartCfg,cutout:'60%'},
+    });
+  }
+
+  // 5. ARR by Renewal Status (donut)
+  if(document.getElementById('rp-renew-st')){
+    const rsm={Critical:0,Soon:0,Upcoming:0,Future:0,Expired:0};
+    filtA.forEach(a=>{if(a.renewalStatus) rsm[a.renewalStatus]+=a.arr;});
+    const keys=Object.keys(rsm).filter(k=>rsm[k]>0);
+    charts['rp-renew-st']=new Chart(document.getElementById('rp-renew-st'),{
+      type:'doughnut',
+      data:{labels:keys,datasets:[{data:keys.map(k=>rsm[k]),backgroundColor:['#ef4444','#f59e0b','#3b82f6','#94a3b8','#dc2626'],borderWidth:2,hoverOffset:8}]},
+      options:{...chartCfg,cutout:'60%'},
+    });
+  }
+
+  // 6. ARR by AM (horizontal bar)
+  if(document.getElementById('rp-am-arr')){
+    const amMap={};
+    filtA.forEach(a=>{if(a.am_name) amMap[a.am_name]=(amMap[a.am_name]||0)+a.arr;});
+    const sorted=Object.entries(amMap).sort((a,b)=>b[1]-a[1]);
+    charts['rp-am-arr']=new Chart(document.getElementById('rp-am-arr'),{
+      type:'bar',
+      data:{labels:sorted.map(x=>x[0]),datasets:[{label:'ARR',data:sorted.map(x=>x[1]),backgroundColor:'#6366f1',borderRadius:6,borderSkipped:false}]},
+      options:{...chartCfg,indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{ticks:{callback:compact},grid:{color:'#f1f5f9'}},y:{grid:{display:false}}}},
+    });
+  }
+
+  // 7. Renewal Calendar — next 12 months (bar)
+  if(document.getElementById('rp-cal')){
+    const months=[],labels=[];
+    for(let i=0;i<12;i++){
+      const d=new Date(); d.setDate(1); d.setMonth(d.getMonth()+i);
+      labels.push(MONTHS[d.getMonth()].slice(0,3)+' '+d.getFullYear());
+      months.push({m:d.getMonth(),y:d.getFullYear()});
+    }
+    const vals=months.map(({m,y})=>filtA.filter(a=>{
+      if(!a.renewal_date)return false;
+      const rd=new Date(a.renewal_date);
+      return !isNaN(rd)&&rd.getMonth()===m&&rd.getFullYear()===y;
+    }).reduce((s,a)=>s+a.arr,0));
+    charts['rp-cal']=new Chart(document.getElementById('rp-cal'),{
+      type:'bar',
+      data:{labels,datasets:[{label:'Renewal ARR',data:vals,backgroundColor:vals.map(v=>v>0?'#6366f1':'#e2e8f0'),borderRadius:6,borderSkipped:false}]},
+      options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{display:false}},scales:{x:{grid:{display:false}},y:{ticks:{callback:compact},grid:{color:'#f1f5f9'}}}},
+    });
+  }
+
+  // 8. Pipeline by Status (donut)
+  if(document.getElementById('rp-pipe-st')){
+    charts['rp-pipe-st']=new Chart(document.getElementById('rp-pipe-st'),{
+      type:'doughnut',
+      data:{labels:STATUS,datasets:[{data:STATUS.map(s=>filtO.filter(o=>o.status===s).reduce((a,o)=>a+o.value,0)),backgroundColor:Object.values(ST_COLOR),borderWidth:2,hoverOffset:8}]},
+      options:{...chartCfg,cutout:'62%'},
+    });
+  }
+
+  // 9. Pipeline by Quarter (grouped bar)
+  if(document.getElementById('rp-pipe-q')){
+    const qs=['Q1','Q2','Q3','Q4'];
+    charts['rp-pipe-q']=new Chart(document.getElementById('rp-pipe-q'),{
+      type:'bar',
+      data:{labels:qs,datasets:STATUS.map(s=>({label:s,data:qs.map(q=>filtO.filter(o=>o.quarter===q&&o.status===s).reduce((a,o)=>a+o.value,0)),backgroundColor:ST_COLOR[s],borderRadius:4,borderSkipped:false}))},
+      options:{...chartCfg,scales:{x:{grid:{display:false}},y:{ticks:{callback:compact},grid:{color:'#f1f5f9'}}}},
+    });
+  }
+
+  // 10. Monthly Collections Trend (line)
+  if(document.getElementById('rp-coll-trend')){
+    const now=new Date();
+    const pts=[];
+    for(let i=11;i>=0;i--){
+      const d=new Date(now.getFullYear(),now.getMonth()-i,1);
+      pts.push({label:MONTHS[d.getMonth()].slice(0,3)+' '+d.getFullYear(),m:MONTHS[d.getMonth()],y:d.getFullYear()});
+    }
+    const vals=pts.map(p=>filtC.filter(c=>c.month===p.m&&Number(c.year)===p.y).reduce((s,c)=>s+c.amount,0));
+    charts['rp-coll-trend']=new Chart(document.getElementById('rp-coll-trend'),{
+      type:'line',
+      data:{labels:pts.map(p=>p.label),datasets:[{label:'Collections',data:vals,borderColor:'#10b981',backgroundColor:'rgba(16,185,129,.12)',fill:true,tension:0.4,pointBackgroundColor:'#10b981',pointRadius:4}]},
+      options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{display:false}},scales:{x:{grid:{display:false}},y:{ticks:{callback:compact},grid:{color:'#f1f5f9'}}}},
+    });
+  }
+
+  // 11. Incentive Payout by Rep (bar)
+  if(document.getElementById('rp-incentive')){
+    const c=cfg(), amPct=c.am_pct||5, csmPct=c.csm_pct||3, reps=c.reps||[];
+    const repMap={};
+    filtC.forEach(x=>{if(!repMap[x.rep_name])repMap[x.rep_name]={type:x.rep_type,total:0};repMap[x.rep_name].total+=x.amount;});
+    const rows=Object.entries(repMap).map(([name,{type,total}])=>{
+      const custom=(reps.find(r=>r.name===name)||{}).custom_pct;
+      const rate=custom!==undefined?custom:(type==='AM'?amPct:csmPct);
+      return{name,type,incentive:total*rate/100};
+    });
+    charts['rp-incentive']=new Chart(document.getElementById('rp-incentive'),{
+      type:'bar',
+      data:{labels:rows.map(r=>r.name),datasets:[{label:'Incentive',data:rows.map(r=>r.incentive),backgroundColor:rows.map(r=>r.type==='AM'?'#6366f1':'#f97316'),borderRadius:6,borderSkipped:false}]},
+      options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{display:false}},scales:{x:{grid:{display:false}},y:{ticks:{callback:compact},grid:{color:'#f1f5f9'}}}},
+    });
+  }
+}
+
+// ═══════════════════════════════════════════════════
 //  OPPORTUNITIES
-// ════════════════════════════════════════════════
-function opportunities() {
-  document.getElementById('app').innerHTML = `
+// ═══════════════════════════════════════════════════
+function opportunities(){
+  document.getElementById('app').innerHTML=`
     ${pageHeader('Opportunities','Track your deals',
-      `<button onclick="oppMode='add';render()" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg">+ Add Deal</button>`
+      `<button onclick="oppMode='add';render()" class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold px-4 py-2 rounded-xl shadow shadow-indigo-200">+ Add Deal</button>`
     )}
     <div id="opp-body"></div>
   `;
-  if (oppMode==='add'||oppMode==='edit') renderOppForm();
+  if(oppMode==='add'||oppMode==='edit') renderOppForm();
   else renderOppList();
 }
-
-function renderOppList() {
-  const all = opps();
-  const fys = [...new Set(all.map(o=>o.fy))].sort().reverse();
-  document.getElementById('opp-body').innerHTML = `
+function renderOppList(){
+  const all=opps(), fys=[...new Set(all.map(o=>o.fy))].sort().reverse();
+  document.getElementById('opp-body').innerHTML=`
     <div class="flex flex-wrap gap-2 mb-4">
-      ${sel('f-fy', [{v:'',l:'All FY'},...fys.map(f=>({v:f,l:f}))], '', 'w-auto')}
-      ${sel('f-q',  [{v:'',l:'All Quarters'},...['Q1','Q2','Q3','Q4'].map(q=>({v:q,l:q}))], '', 'w-auto')}
-      ${sel('f-st', [{v:'',l:'All Status'},...STATUS.map(s=>({v:s,l:s}))], '', 'w-auto')}
+      ${sel('f-fy',[{v:'',l:'All FY'},...fys.map(f=>({v:f,l:f}))], '', 'w-auto')}
+      ${sel('f-q', [{v:'',l:'All Quarters'},...['Q1','Q2','Q3','Q4'].map(q=>({v:q,l:q}))], '', 'w-auto')}
+      ${sel('f-st',[{v:'',l:'All Status'},...STATUS.map(s=>({v:s,l:s}))], '', 'w-auto')}
     </div>
     <div id="opp-tbl"></div>
   `;
-  document.getElementById('f-fy').onchange =
-  document.getElementById('f-q').onchange  =
-  document.getElementById('f-st').onchange = filterOpps;
+  ['f-fy','f-q','f-st'].forEach(id=>document.getElementById(id).onchange=filterOpps);
   filterOpps();
 }
-
-function filterOpps() {
-  const fy = document.getElementById('f-fy').value;
-  const q  = document.getElementById('f-q').value;
-  const st = document.getElementById('f-st').value;
-  let data = opps();
-  if (fy) data = data.filter(o=>o.fy===fy);
-  if (q)  data = data.filter(o=>o.quarter===q);
-  if (st) data = data.filter(o=>o.status===st);
-  const total = data.reduce((s,o)=>s+o.value,0);
-  document.getElementById('opp-tbl').innerHTML = data.length===0
-    ? card(emptyState('No opportunities found.'), 'p-0 overflow-hidden')
-    : card(`
-      <table class="w-full text-sm">
-        <thead class="bg-gray-50 border-b border-gray-100">
-          ${thRow(['Opportunity','Client','Rep','Value','Close','Quarter','Status',''])}
-        </thead>
-        <tbody class="divide-y divide-gray-50">
-          ${data.map(o=>`
-            <tr class="hover:bg-slate-50">
-              <td class="px-4 py-3 font-medium">${o.opportunity_name}</td>
-              <td class="px-4 py-3 text-gray-500">${o.client_name}</td>
-              <td class="px-4 py-3">${o.rep_name} ${typeBadge(o.rep_type)}</td>
-              <td class="px-4 py-3 font-semibold">${inr(o.value)}</td>
-              <td class="px-4 py-3 text-gray-500 text-xs">${o.close_month} ${o.close_year}</td>
-              <td class="px-4 py-3 text-xs text-gray-500">${o.quarter} · ${o.fy}</td>
-              <td class="px-4 py-3">${badge(o.status)}</td>
-              <td class="px-4 py-3 whitespace-nowrap">
-                <button onclick="startEditOpp(${o.id})" class="text-blue-500 hover:underline text-xs mr-2">Edit</button>
-                <button onclick="delOpp(${o.id})" class="text-red-400 hover:underline text-xs">Del</button>
-              </td>
-            </tr>`).join('')}
+function filterOpps(){
+  const fy=document.getElementById('f-fy').value, q=document.getElementById('f-q').value, st=document.getElementById('f-st').value;
+  let data=opps();
+  if(fy) data=data.filter(o=>o.fy===fy);
+  if(q)  data=data.filter(o=>o.quarter===q);
+  if(st) data=data.filter(o=>o.status===st);
+  const total=data.reduce((s,o)=>s+o.value,0);
+  document.getElementById('opp-tbl').innerHTML=data.length===0
+    ? card(emptyState('No opportunities found.'),'p-4')
+    : `<div class="card overflow-hidden">
+      <table class="w-full text-sm dt">
+        <thead class="bg-slate-50 border-b border-slate-100">${thRow(['Opportunity','Client','Rep','Value','Close','Quarter','Status',''])}</thead>
+        <tbody class="divide-y divide-slate-50">
+          ${data.map(o=>`<tr>
+            <td class="px-4 py-3 font-semibold text-slate-800">${o.opportunity_name}</td>
+            <td class="px-4 py-3 text-slate-500">${o.client_name}</td>
+            <td class="px-4 py-3">${o.rep_name} ${typeBadge(o.rep_type)}</td>
+            <td class="px-4 py-3 font-bold text-slate-800">${inr(o.value)}</td>
+            <td class="px-4 py-3 text-slate-400 text-xs">${o.close_month} ${o.close_year}</td>
+            <td class="px-4 py-3 text-xs text-slate-400">${o.quarter} · ${o.fy}</td>
+            <td class="px-4 py-3">${stBadge(o.status)}</td>
+            <td class="px-4 py-3 whitespace-nowrap">
+              <button onclick="startEditOpp(${o.id})" class="text-indigo-500 hover:underline text-xs mr-2">Edit</button>
+              <button onclick="delOpp(${o.id})" class="text-red-400 hover:underline text-xs">Del</button>
+            </td>
+          </tr>`).join('')}
         </tbody>
-        <tfoot class="bg-gray-50 border-t border-gray-100">
-          <tr>
-            <td colspan="3" class="px-4 py-3 text-xs text-gray-400">${data.length} deal${data.length!==1?'s':''}</td>
-            <td class="px-4 py-3 font-bold text-gray-800">${inr(total)}</td>
-            <td colspan="4"></td>
-          </tr>
-        </tfoot>
-      </table>`, 'overflow-hidden');
+        <tfoot class="bg-slate-50 border-t border-slate-100"><tr>
+          <td colspan="3" class="px-4 py-3 text-xs text-slate-400">${data.length} deal${data.length!==1?'s':''}</td>
+          <td class="px-4 py-3 font-bold text-slate-800">${inr(total)}</td>
+          <td colspan="4"></td>
+        </tr></tfoot>
+      </table>
+    </div>`;
 }
-
-function startEditOpp(id) { editId=id; oppMode='edit'; render(); }
-function delOpp(id) {
-  if (!confirm('Delete this deal?')) return;
-  setOpps(opps().filter(o=>o.id!==id));
-  toast('Deal deleted'); render();
-}
-
-function renderOppForm() {
-  const prefill = window._prefillOpp; window._prefillOpp = null;
-  const c   = cfg();
-  const reps = c.reps||[];
-  const isEdit = oppMode==='edit';
-  const o = isEdit ? opps().find(x=>x.id===editId) : null;
-  const now = new Date();
-  const v = (key, def) => o ? o[key] : (prefill ? (prefill[key]??def) : def);
-  const closeMonthIdx = o ? MONTHS.indexOf(o.close_month) : (prefill?.close_month_idx ?? now.getMonth());
-  const closeYear     = o ? o.close_year : (prefill?.close_year ?? now.getFullYear());
-
-  document.getElementById('opp-body').innerHTML = card(`
+function startEditOpp(id){editId=id;oppMode='edit';render();}
+function delOpp(id){if(!confirm('Delete this deal?'))return; setOpps(opps().filter(o=>o.id!==id)); toast('Deal deleted'); render();}
+function renderOppForm(){
+  const pf=window._prefillOpp; window._prefillOpp=null;
+  const c=cfg(), reps=c.reps||[], isEdit=oppMode==='edit';
+  const o=isEdit?opps().find(x=>x.id===editId):null;
+  const now=new Date();
+  const v=(k,d)=>o?o[k]:(pf?(pf[k]??d):d);
+  const cm=o?MONTHS.indexOf(o.close_month):(pf?.close_month_idx??now.getMonth());
+  const cy=o?o.close_year:(pf?.close_year??now.getFullYear());
+  document.getElementById('opp-body').innerHTML=card(`
     <div class="flex items-center justify-between mb-5">
-      <h2 class="text-base font-semibold">${isEdit?'Edit Deal':'New Deal'}</h2>
-      <button onclick="oppMode='list';render()" class="text-xs text-gray-400 hover:text-gray-600">← Back to list</button>
+      <h2 class="text-base font-bold text-slate-800">${isEdit?'Edit Deal':'New Deal'}</h2>
+      <button onclick="oppMode='list';render()" class="text-xs text-slate-400 hover:text-slate-600">← Back</button>
     </div>
-    ${reps.length===0 ? `<div class="bg-amber-50 border border-amber-200 text-amber-800 text-sm p-3 rounded-lg mb-4">⚠️ Add reps in <button onclick="go('settings')" class="underline font-medium">Settings</button> first.</div>` : ''}
+    ${reps.length===0?`<div class="bg-amber-50 border border-amber-200 text-amber-800 text-sm p-3 rounded-xl mb-4">⚠️ Add reps in <button onclick="go('settings')" class="underline font-medium">Settings</button> first.</div>`:''}
     <div class="space-y-4">
-      ${frow(
-        lbl('Opportunity Name *') + inp('o-name','text', v('opportunity_name','')),
-        lbl('Client Name *')      + inp('o-client','text', v('client_name',''))
-      )}
-      ${frow(
-        lbl('Assign Rep *') + sel('o-rep', reps.map(r=>({v:r.name,l:`${r.name} (${r.type})`})), v('rep_name','')),
-        lbl('Value (₹) *')  + inp('o-val','number', v('value',''))
-      )}
-      ${frow(
-        lbl('Expected Close Month *') + sel('o-month', MONTHS.map((m,i)=>({v:i,l:m})), closeMonthIdx),
-        lbl('Expected Close Year *')  + inp('o-year','number', closeYear)
-      )}
-      ${frow(
-        lbl('Status *') + sel('o-status', STATUS, v('status','Open')),
-        '<div></div>'
-      )}
+      ${frow(lbl('Opportunity Name *')+inp('o-name','text',v('opportunity_name','')), lbl('Client Name *')+inp('o-client','text',v('client_name','')))}
+      ${frow(lbl('Assign Rep *')+sel('o-rep',reps.map(r=>({v:r.name,l:`${r.name} (${r.type})`})),v('rep_name','')), lbl('Value (₹) *')+inp('o-val','number',v('value','')))}
+      ${frow(lbl('Close Month *')+sel('o-month',MONTHS.map((m,i)=>({v:i,l:m})),cm), lbl('Close Year *')+inp('o-year','number',cy))}
+      ${frow(lbl('Status *')+sel('o-status',STATUS,v('status','Open')), '<div></div>')}
     </div>
     <div class="flex gap-3 mt-6">
-      <button onclick="saveOpp(${isEdit?editId:'null'})" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg text-sm font-medium">
-        ${isEdit?'Save Changes':'Add Deal'}
-      </button>
-      <button onclick="oppMode='list';render()" class="border border-gray-200 text-gray-600 hover:bg-gray-50 px-5 py-2 rounded-lg text-sm">Cancel</button>
+      <button onclick="saveOpp(${isEdit?editId:'null'})" class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-5 py-2 rounded-xl text-sm font-semibold shadow shadow-indigo-200">${isEdit?'Save Changes':'Add Deal'}</button>
+      <button onclick="oppMode='list';render()" class="border border-slate-200 text-slate-600 hover:bg-slate-50 px-5 py-2 rounded-xl text-sm">Cancel</button>
     </div>
-  `, 'p-6');
+  `,'p-6');
 }
-
-function saveOpp(eid) {
-  const name   = document.getElementById('o-name').value.trim();
-  const client = document.getElementById('o-client').value.trim();
-  const repEl  = document.getElementById('o-rep');
-  const val    = parseFloat(document.getElementById('o-val').value);
-  const mIdx   = parseInt(document.getElementById('o-month').value);
-  const yr     = parseInt(document.getElementById('o-year').value);
-  const st     = document.getElementById('o-status').value;
-  if (!name||!client||isNaN(val)||val<0) { alert('Fill in all required fields.'); return; }
-  const c = cfg();
-  const repName = repEl?.value||'';
-  const repType = (c.reps.find(r=>r.name===repName)||{}).type||'AM';
-  const {q, fy} = fyq(mIdx, yr);
-  let data = opps();
-  if (eid!==null) {
-    data = data.map(o => o.id===eid ? {...o, opportunity_name:name, client_name:client, rep_name:repName, rep_type:repType, value:val, close_month:MONTHS[mIdx], close_year:yr, quarter:q, fy, status:st} : o);
-  } else {
-    data.push({ id:uid(data), opportunity_name:name, client_name:client, rep_name:repName, rep_type:repType, value:val, close_month:MONTHS[mIdx], close_year:yr, quarter:q, fy, status:st });
-  }
+function saveOpp(eid){
+  const name=document.getElementById('o-name').value.trim(), client=document.getElementById('o-client').value.trim();
+  const repEl=document.getElementById('o-rep'), val=parseFloat(document.getElementById('o-val').value);
+  const mIdx=parseInt(document.getElementById('o-month').value), yr=parseInt(document.getElementById('o-year').value);
+  const st=document.getElementById('o-status').value;
+  if(!name||!client||isNaN(val)||val<0){alert('Fill in all required fields.');return;}
+  const c=cfg(), repName=repEl?.value||'', repType=(c.reps.find(r=>r.name===repName)||{}).type||'AM';
+  const{q,fy}=fyq(mIdx,yr); let data=opps();
+  if(eid!==null){data=data.map(o=>o.id===eid?{...o,opportunity_name:name,client_name:client,rep_name:repName,rep_type:repType,value:val,close_month:MONTHS[mIdx],close_year:yr,quarter:q,fy,status:st}:o);}
+  else{data.push({id:uid(data),opportunity_name:name,client_name:client,rep_name:repName,rep_type:repType,value:val,close_month:MONTHS[mIdx],close_year:yr,quarter:q,fy,status:st});}
   setOpps(data); oppMode='list'; toast(eid?'Deal updated':'Deal added'); go('opportunities');
 }
 
-// ════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════
 //  COLLECTIONS
-// ════════════════════════════════════════════════
-function collections() {
-  document.getElementById('app').innerHTML = `
+// ═══════════════════════════════════════════════════
+function collections(){
+  document.getElementById('app').innerHTML=`
     ${pageHeader('Collections','Record actual money collected',
-      `<button onclick="colMode='add';render()" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg">+ Record</button>`
+      `<button onclick="colMode='add';render()" class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold px-4 py-2 rounded-xl shadow shadow-indigo-200">+ Record</button>`
     )}
     <div id="col-body"></div>
   `;
-  if (colMode==='add') renderColForm();
+  if(colMode==='add') renderColForm();
   else renderColList();
 }
-
-function renderColList() {
-  const all = cols();
-  const years = [...new Set(all.map(c=>c.year))].sort((a,b)=>b-a);
-  document.getElementById('col-body').innerHTML = `
+function renderColList(){
+  const all=cols(), years=[...new Set(all.map(c=>c.year))].sort((a,b)=>b-a);
+  document.getElementById('col-body').innerHTML=`
     <div class="flex flex-wrap gap-2 mb-4">
-      ${sel('cf-yr', [{v:'',l:'All Years'},...years.map(y=>({v:y,l:y}))], '', 'w-auto')}
-      ${sel('cf-mo', [{v:'',l:'All Months'},...MONTHS.map(m=>({v:m,l:m}))], '', 'w-auto')}
-      ${sel('cf-ty', [{v:'',l:'All Types'},{v:'AM',l:'AM'},{v:'CSM',l:'CSM'}], '', 'w-auto')}
+      ${sel('cf-yr',[{v:'',l:'All Years'},...years.map(y=>({v:y,l:y}))], '', 'w-auto')}
+      ${sel('cf-mo',[{v:'',l:'All Months'},...MONTHS.map(m=>({v:m,l:m}))], '', 'w-auto')}
+      ${sel('cf-ty',[{v:'',l:'All Types'},{v:'AM',l:'AM'},{v:'CSM',l:'CSM'}], '', 'w-auto')}
     </div>
     <div id="col-tbl"></div>
   `;
-  document.getElementById('cf-yr').onchange =
-  document.getElementById('cf-mo').onchange =
-  document.getElementById('cf-ty').onchange = filterCols;
+  ['cf-yr','cf-mo','cf-ty'].forEach(id=>document.getElementById(id).onchange=filterCols);
   filterCols();
 }
-
-function filterCols() {
-  const yr = document.getElementById('cf-yr').value;
-  const mo = document.getElementById('cf-mo').value;
-  const ty = document.getElementById('cf-ty').value;
-  let data = cols();
-  if (yr) data = data.filter(c=>String(c.year)===String(yr));
-  if (mo) data = data.filter(c=>c.month===mo);
-  if (ty) data = data.filter(c=>c.rep_type===ty);
-  const total = data.reduce((s,c)=>s+c.amount,0);
-  document.getElementById('col-tbl').innerHTML = data.length===0
-    ? card(emptyState('No collections recorded yet.'), 'p-0 overflow-hidden')
-    : card(`
-      <table class="w-full text-sm">
-        <thead class="bg-gray-50 border-b border-gray-100">
-          ${thRow(['Rep','Type','Month','Year','Amount',''])}
-        </thead>
-        <tbody class="divide-y divide-gray-50">
-          ${data.map(c=>`
-            <tr class="hover:bg-slate-50">
-              <td class="px-4 py-3 font-medium">${c.rep_name}</td>
-              <td class="px-4 py-3">${typeBadge(c.rep_type)}</td>
-              <td class="px-4 py-3 text-gray-500">${c.month}</td>
-              <td class="px-4 py-3 text-gray-500">${c.year}</td>
-              <td class="px-4 py-3 font-semibold">${inr(c.amount)}</td>
-              <td class="px-4 py-3"><button onclick="delCol(${c.id})" class="text-red-400 hover:underline text-xs">Del</button></td>
-            </tr>`).join('')}
+function filterCols(){
+  const yr=document.getElementById('cf-yr').value, mo=document.getElementById('cf-mo').value, ty=document.getElementById('cf-ty').value;
+  let data=cols();
+  if(yr) data=data.filter(c=>String(c.year)===String(yr));
+  if(mo) data=data.filter(c=>c.month===mo);
+  if(ty) data=data.filter(c=>c.rep_type===ty);
+  const total=data.reduce((s,c)=>s+c.amount,0);
+  document.getElementById('col-tbl').innerHTML=data.length===0
+    ? card(emptyState('No collections recorded yet.'),'p-4')
+    : `<div class="card overflow-hidden">
+      <table class="w-full text-sm dt">
+        <thead class="bg-slate-50 border-b border-slate-100">${thRow(['Rep','Type','Month','Year','Amount',''])}</thead>
+        <tbody class="divide-y divide-slate-50">
+          ${data.map(c=>`<tr>
+            <td class="px-4 py-3 font-semibold text-slate-800">${c.rep_name}</td>
+            <td class="px-4 py-3">${typeBadge(c.rep_type)}</td>
+            <td class="px-4 py-3 text-slate-500">${c.month}</td>
+            <td class="px-4 py-3 text-slate-500">${c.year}</td>
+            <td class="px-4 py-3 font-bold text-slate-800">${inr(c.amount)}</td>
+            <td class="px-4 py-3"><button onclick="delCol(${c.id})" class="text-red-400 hover:underline text-xs">Del</button></td>
+          </tr>`).join('')}
         </tbody>
-        <tfoot class="bg-gray-50 border-t border-gray-100">
-          <tr>
-            <td colspan="4" class="px-4 py-3 text-xs text-gray-400">${data.length} entr${data.length!==1?'ies':'y'}</td>
-            <td class="px-4 py-3 font-bold">${inr(total)}</td><td></td>
-          </tr>
-        </tfoot>
-      </table>`, 'overflow-hidden');
+        <tfoot class="bg-slate-50 border-t border-slate-100"><tr>
+          <td colspan="4" class="px-4 py-3 text-xs text-slate-400">${data.length} entr${data.length!==1?'ies':'y'}</td>
+          <td class="px-4 py-3 font-bold">${inr(total)}</td><td></td>
+        </tr></tfoot>
+      </table>
+    </div>`;
 }
-
-function delCol(id) {
-  if (!confirm('Delete this entry?')) return;
-  setCols(cols().filter(c=>c.id!==id));
-  toast('Entry deleted'); render();
-}
-
-function renderColForm() {
-  const c = cfg(); const reps=c.reps||[]; const now=new Date();
-  document.getElementById('col-body').innerHTML = card(`
+function delCol(id){if(!confirm('Delete?'))return; setCols(cols().filter(c=>c.id!==id)); toast('Deleted'); render();}
+function renderColForm(){
+  const c=cfg(), reps=c.reps||[], now=new Date();
+  document.getElementById('col-body').innerHTML=card(`
     <div class="flex items-center justify-between mb-5">
-      <h2 class="text-base font-semibold">Record Collection</h2>
-      <button onclick="colMode='list';render()" class="text-xs text-gray-400 hover:text-gray-600">← Back</button>
+      <h2 class="text-base font-bold text-slate-800">Record Collection</h2>
+      <button onclick="colMode='list';render()" class="text-xs text-slate-400 hover:text-slate-600">← Back</button>
     </div>
-    ${reps.length===0?`<div class="bg-amber-50 border border-amber-200 text-amber-800 text-sm p-3 rounded-lg mb-4">⚠️ Add reps in <button onclick="go('settings')" class="underline font-medium">Settings</button> first.</div>`:''}
+    ${reps.length===0?`<div class="bg-amber-50 border border-amber-200 text-amber-800 text-sm p-3 rounded-xl mb-4">⚠️ Add reps in <button onclick="go('settings')" class="underline font-medium">Settings</button> first.</div>`:''}
     <div class="space-y-4">
-      ${frow(
-        lbl('Rep *')        + sel('c-rep', reps.map(r=>({v:r.name,l:`${r.name} (${r.type})`})), ''),
-        lbl('Amount (₹) *') + inp('c-amt','number','')
-      )}
-      ${frow(
-        lbl('Month *') + sel('c-month', MONTHS.map(m=>({v:m,l:m})), MONTHS[now.getMonth()]),
-        lbl('Year *')  + inp('c-year','number', now.getFullYear())
-      )}
+      ${frow(lbl('Rep *')+sel('c-rep',reps.map(r=>({v:r.name,l:`${r.name} (${r.type})`})),''), lbl('Amount (₹) *')+inp('c-amt','number',''))}
+      ${frow(lbl('Month *')+sel('c-month',MONTHS.map(m=>({v:m,l:m})),MONTHS[now.getMonth()]), lbl('Year *')+inp('c-year','number',now.getFullYear()))}
     </div>
     <div class="flex gap-3 mt-6">
-      <button onclick="saveCol()" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg text-sm font-medium">Record</button>
-      <button onclick="colMode='list';render()" class="border border-gray-200 text-gray-600 hover:bg-gray-50 px-5 py-2 rounded-lg text-sm">Cancel</button>
+      <button onclick="saveCol()" class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-5 py-2 rounded-xl text-sm font-semibold shadow shadow-indigo-200">Record</button>
+      <button onclick="colMode='list';render()" class="border border-slate-200 text-slate-600 hover:bg-slate-50 px-5 py-2 rounded-xl text-sm">Cancel</button>
     </div>
-  `, 'p-6');
+  `,'p-6');
 }
-
-function saveCol() {
-  const c=cfg(), repName=document.getElementById('c-rep').value,
-        amt=parseFloat(document.getElementById('c-amt').value),
-        month=document.getElementById('c-month').value,
-        yr=parseInt(document.getElementById('c-year').value);
-  if (!repName||isNaN(amt)||amt<=0) { alert('Fill in all required fields.'); return; }
+function saveCol(){
+  const c=cfg(), repName=document.getElementById('c-rep').value, amt=parseFloat(document.getElementById('c-amt').value);
+  const month=document.getElementById('c-month').value, yr=parseInt(document.getElementById('c-year').value);
+  if(!repName||isNaN(amt)||amt<=0){alert('Fill in all required fields.');return;}
   const repType=(c.reps.find(r=>r.name===repName)||{}).type||'AM';
-  const data=cols();
-  data.push({id:uid(data),rep_name:repName,rep_type:repType,month,year:yr,amount:amt});
+  const data=cols(); data.push({id:uid(data),rep_name:repName,rep_type:repType,month,year:yr,amount:amt});
   setCols(data); colMode='list'; toast('Collection recorded'); go('collections');
 }
 
-// ════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════
 //  INCENTIVES
-// ════════════════════════════════════════════════
-function incentives() {
+// ═══════════════════════════════════════════════════
+function incentives(){
   const yrs=[...new Set(cols().map(c=>c.year))].sort((a,b)=>b-a);
-  document.getElementById('app').innerHTML = `
+  document.getElementById('app').innerHTML=`
     ${pageHeader('Incentive Calculator','Collections × incentive rate')}
     <div class="flex flex-wrap gap-2 mb-5">
-      ${sel('i-yr', [{v:'',l:'All Years'},...yrs.map(y=>({v:y,l:y}))], '', 'w-auto')}
-      ${sel('i-mo', [{v:'',l:'All Months'},...MONTHS.map(m=>({v:m,l:m}))], '', 'w-auto')}
-      ${sel('i-ty', [{v:'',l:'All Types'},{v:'AM',l:'AM'},{v:'CSM',l:'CSM'}], '', 'w-auto')}
+      ${sel('i-yr',[{v:'',l:'All Years'},...yrs.map(y=>({v:y,l:y}))], '', 'w-auto')}
+      ${sel('i-mo',[{v:'',l:'All Months'},...MONTHS.map(m=>({v:m,l:m}))], '', 'w-auto')}
+      ${sel('i-ty',[{v:'',l:'All Types'},{v:'AM',l:'AM'},{v:'CSM',l:'CSM'}], '', 'w-auto')}
     </div>
     <div id="i-metrics" class="grid grid-cols-3 gap-4 mb-5"></div>
     <div id="i-table" class="mb-5"></div>
-    ${card('<p class="text-sm font-semibold text-gray-700 mb-3">Incentive vs Collections by Rep</p><canvas id="ch-i" height="130"></canvas>', 'p-5')}
+    ${chartCard('Incentive vs Collections by Rep','ch-i',140,1)}
   `;
-  document.getElementById('i-yr').onchange =
-  document.getElementById('i-mo').onchange =
-  document.getElementById('i-ty').onchange = calcIncentives;
+  ['i-yr','i-mo','i-ty'].forEach(id=>document.getElementById(id).onchange=calcIncentives);
   calcIncentives();
 }
-
-function calcIncentives() {
+function calcIncentives(){
   const c=cfg(), amPct=c.am_pct||5, csmPct=c.csm_pct||3, reps=c.reps||[];
-  const selYr=document.getElementById('i-yr').value,
-        selMo=document.getElementById('i-mo').value,
-        selTy=document.getElementById('i-ty').value;
+  const selYr=document.getElementById('i-yr').value, selMo=document.getElementById('i-mo').value, selTy=document.getElementById('i-ty').value;
   let data=cols();
   if(selYr) data=data.filter(x=>String(x.year)===String(selYr));
   if(selMo) data=data.filter(x=>x.month===selMo);
@@ -1061,119 +1124,114 @@ function calcIncentives() {
     return{name,type,total,rate,incentive:total*rate/100};
   });
   const sumCol=rows.reduce((s,r)=>s+r.total,0), sumInc=rows.reduce((s,r)=>s+r.incentive,0);
-  document.getElementById('i-metrics').innerHTML=`${metric('Total Collections',inr(sumCol))}${metric('Total Incentive Payout',inr(sumInc))}${metric('AM Rate / CSM Rate',`${amPct}% / ${csmPct}%`)}`;
+  document.getElementById('i-metrics').innerHTML=`${mc('Total Collections',inr(sumCol),'',1)}${mc('Total Incentive Payout',inr(sumInc),'',2)}${mc('AM Rate / CSM Rate',`${amPct}% / ${csmPct}%`,'',0)}`;
   document.getElementById('i-table').innerHTML=rows.length===0
-    ? card(emptyState('No collections for this period.'),'p-0 overflow-hidden')
-    : card(`<table class="w-full text-sm">
-      <thead class="bg-gray-50 border-b border-gray-100">${thRow(['Rep','Type','Collections','Rate','Incentive'])}</thead>
-      <tbody class="divide-y divide-gray-50">
-        ${rows.map(r=>`<tr class="hover:bg-slate-50">
-          <td class="px-4 py-3 font-medium">${r.name}</td>
-          <td class="px-4 py-3">${typeBadge(r.type)}</td>
-          <td class="px-4 py-3">${inr(r.total)}</td>
-          <td class="px-4 py-3 text-gray-500">${r.rate}%${(c.reps.find(x=>x.name===r.name)||{}).custom_pct!==undefined?' <span class="text-xs text-violet-500">(custom)</span>':''}</td>
-          <td class="px-4 py-3 font-bold text-emerald-600">${inr(r.incentive)}</td>
-        </tr>`).join('')}
-      </tbody>
-      <tfoot class="bg-gray-50 border-t border-gray-100"><tr>
-        <td colspan="2" class="px-4 py-3 text-xs text-gray-400">${rows.length} rep${rows.length!==1?'s':''}</td>
-        <td class="px-4 py-3 font-bold">${inr(sumCol)}</td><td></td>
-        <td class="px-4 py-3 font-bold text-emerald-600">${inr(sumInc)}</td>
-      </tr></tfoot></table>`,'overflow-hidden');
+    ? card(emptyState('No collections for this period.'),'p-4')
+    : `<div class="card overflow-hidden">
+      <table class="w-full text-sm dt">
+        <thead class="bg-slate-50 border-b border-slate-100">${thRow(['Rep','Type','Collections','Rate','Incentive'])}</thead>
+        <tbody class="divide-y divide-slate-50">
+          ${rows.map(r=>`<tr>
+            <td class="px-4 py-3 font-semibold text-slate-800">${r.name}</td>
+            <td class="px-4 py-3">${typeBadge(r.type)}</td>
+            <td class="px-4 py-3">${inr(r.total)}</td>
+            <td class="px-4 py-3 text-slate-500">${r.rate}%${(c.reps.find(x=>x.name===r.name)||{}).custom_pct!==undefined?' <span class="text-xs text-violet-500">(custom)</span>':''}</td>
+            <td class="px-4 py-3 font-bold text-emerald-600">${inr(r.incentive)}</td>
+          </tr>`).join('')}
+        </tbody>
+        <tfoot class="bg-slate-50 border-t border-slate-100"><tr>
+          <td colspan="2" class="px-4 py-3 text-xs text-slate-400">${rows.length} rep${rows.length!==1?'s':''}</td>
+          <td class="px-4 py-3 font-bold">${inr(sumCol)}</td><td></td>
+          <td class="px-4 py-3 font-bold text-emerald-600">${inr(sumInc)}</td>
+        </tr></tfoot>
+      </table>
+    </div>`;
   if(charts.i){charts.i.destroy();delete charts.i;}
   if(rows.length>0){
     charts.i=new Chart(document.getElementById('ch-i'),{
       type:'bar',
       data:{labels:rows.map(r=>r.name),datasets:[
-        {label:'Collections',data:rows.map(r=>r.total),backgroundColor:'#93c5fd',borderRadius:4},
-        {label:'Incentive',data:rows.map(r=>r.incentive),backgroundColor:'#6ee7b7',borderRadius:4},
+        {label:'Collections',data:rows.map(r=>r.total),backgroundColor:'#6366f1',borderRadius:5,borderSkipped:false},
+        {label:'Incentive',data:rows.map(r=>r.incentive),backgroundColor:'#10b981',borderRadius:5,borderSkipped:false},
       ]},
-      options:{responsive:true,plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}}},scales:{x:{grid:{display:false}},y:{ticks:{callback:v=>'₹'+Number(v).toLocaleString('en-IN',{notation:'compact'})}}}},
+      options:{responsive:true,plugins:{legend:{position:'bottom'}},scales:{x:{grid:{display:false}},y:{ticks:{callback:compact},grid:{color:'#f1f5f9'}}}},
     });
   }
 }
 
-// ════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════
 //  SETTINGS
-// ════════════════════════════════════════════════
-function settings() {
+// ═══════════════════════════════════════════════════
+function settings(){
   const c=cfg(), reps=c.reps||[];
   document.getElementById('app').innerHTML=`
     ${pageHeader('Settings','Configure reps and incentive rates')}
     <div class="grid grid-cols-2 gap-5 mb-5">
-      ${card(`<h2 class="text-sm font-semibold text-gray-800 mb-4">Default Incentive Rates</h2>
+      ${card(`<h2 class="text-sm font-bold text-slate-800 mb-4">Default Incentive Rates</h2>
         <div class="space-y-4">
           <div>${lbl('AM Incentive %')}${inp('s-am','number',c.am_pct)}</div>
           <div>${lbl('CSM Incentive %')}${inp('s-csm','number',c.csm_pct)}</div>
-          <button onclick="saveRates()" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-medium">Save Rates</button>
+          <button onclick="saveRates()" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-2.5 rounded-xl text-sm font-semibold shadow shadow-indigo-200">Save Rates</button>
         </div>`,'p-5')}
-      ${card(`<h2 class="text-sm font-semibold text-gray-800 mb-4">Add New Rep</h2>
+      ${card(`<h2 class="text-sm font-bold text-slate-800 mb-4">Add New Rep</h2>
         <div class="space-y-4">
           <div>${lbl('Name *')}${inp('s-rname','text','')}</div>
           <div>${lbl('Type *')}${sel('s-rtype',[{v:'AM',l:'AM (Account Manager)'},{v:'CSM',l:'CSM (Customer Success)'}],'AM')}</div>
           <div class="flex items-center gap-2">
-            <input type="checkbox" id="s-cust-chk" onchange="document.getElementById('s-cust-wrap').classList.toggle('hidden',!this.checked)" class="rounded border-gray-300 text-blue-600"/>
-            <label for="s-cust-chk" class="text-xs text-gray-600">Custom incentive rate for this rep</label>
+            <input type="checkbox" id="s-cust-chk" onchange="document.getElementById('s-cust-wrap').classList.toggle('hidden',!this.checked)" class="rounded border-slate-300 text-indigo-600"/>
+            <label for="s-cust-chk" class="text-xs text-slate-600">Custom incentive rate for this rep</label>
           </div>
           <div id="s-cust-wrap" class="hidden">${lbl('Custom Rate (%)')}${inp('s-cpct','number',c.am_pct)}</div>
-          <button onclick="addRep()" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-medium">Add Rep</button>
+          <button onclick="addRep()" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-2.5 rounded-xl text-sm font-semibold shadow shadow-indigo-200">Add Rep</button>
         </div>`,'p-5')}
     </div>
-    <div>
-      ${reps.length===0 ? card(emptyState('No reps yet. Add one above.'),'p-0 overflow-hidden') : card(`
-        <h2 class="text-sm font-semibold text-gray-800 mb-0 px-4 py-3 border-b border-gray-100">Reps</h2>
-        <table class="w-full text-sm">
-          <thead class="bg-gray-50">${thRow(['Name','Type','Incentive Rate',''])}</thead>
-          <tbody class="divide-y divide-gray-50">
-            ${reps.map(r=>`<tr class="hover:bg-slate-50">
-              <td class="px-4 py-3 font-medium">${r.name}</td>
-              <td class="px-4 py-3">${typeBadge(r.type)}</td>
-              <td class="px-4 py-3 text-gray-500">${r.custom_pct!==undefined?`${r.custom_pct}% <span class="text-violet-500 text-xs">(custom)</span>`:`Default (${r.type==='AM'?c.am_pct:c.csm_pct}%)`}</td>
-              <td class="px-4 py-3"><button onclick="delRep('${r.name}')" class="text-red-400 hover:underline text-xs">Remove</button></td>
-            </tr>`).join('')}
-          </tbody>
-        </table>`,'overflow-hidden')}
-    </div>
+    ${reps.length===0 ? card(emptyState('No reps yet. Add one above.'),'p-4') : `<div class="card overflow-hidden">
+      <div class="px-5 py-4 border-b border-slate-100"><h2 class="text-sm font-bold text-slate-800">Reps</h2></div>
+      <table class="w-full text-sm dt">
+        <thead class="bg-slate-50">${thRow(['Name','Type','Incentive Rate',''])}</thead>
+        <tbody class="divide-y divide-slate-50">
+          ${reps.map(r=>`<tr>
+            <td class="px-4 py-3 font-semibold text-slate-800">${r.name}</td>
+            <td class="px-4 py-3">${typeBadge(r.type)}</td>
+            <td class="px-4 py-3 text-slate-500">${r.custom_pct!==undefined?`${r.custom_pct}% <span class="text-violet-500 text-xs">(custom)</span>`:`Default (${r.type==='AM'?c.am_pct:c.csm_pct}%)`}</td>
+            <td class="px-4 py-3"><button onclick="delRep('${r.name}')" class="text-red-400 hover:underline text-xs">Remove</button></td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`}
   `;
 }
-
-function saveRates() {
-  const c=cfg();
-  c.am_pct=parseFloat(document.getElementById('s-am').value)||5;
-  c.csm_pct=parseFloat(document.getElementById('s-csm').value)||3;
+function saveRates(){
+  const c=cfg(); c.am_pct=parseFloat(document.getElementById('s-am').value)||5; c.csm_pct=parseFloat(document.getElementById('s-csm').value)||3;
   setCfg(c); toast('Rates saved!'); go('settings');
 }
-function addRep() {
-  const name=document.getElementById('s-rname').value.trim(),
-        type=document.getElementById('s-rtype').value,
-        cust=document.getElementById('s-cust-chk').checked,
-        cpct=parseFloat(document.getElementById('s-cpct')?.value);
+function addRep(){
+  const name=document.getElementById('s-rname').value.trim(), type=document.getElementById('s-rtype').value;
+  const cust=document.getElementById('s-cust-chk').checked, cpct=parseFloat(document.getElementById('s-cpct')?.value);
   if(!name){alert('Name is required.');return;}
   const c=cfg(); c.reps=c.reps||[];
   if(c.reps.some(r=>r.name.toLowerCase()===name.toLowerCase())){alert('Rep already exists.');return;}
-  const rep={name,type};
-  if(cust&&!isNaN(cpct))rep.custom_pct=cpct;
+  const rep={name,type}; if(cust&&!isNaN(cpct))rep.custom_pct=cpct;
   c.reps.push(rep); setCfg(c); toast(`Added ${name} (${type})`); go('settings');
 }
-function delRep(name) {
+function delRep(name){
   if(!confirm(`Remove ${name}?`))return;
   const c=cfg(); c.reps=(c.reps||[]).filter(r=>r.name!==name);
   setCfg(c); toast(`Removed ${name}`); go('settings');
 }
 
-// ════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════
 //  TOAST
-// ════════════════════════════════════════════════
-function toast(msg) {
-  const el=document.getElementById('toast'), msgEl=document.getElementById('toast-msg');
-  msgEl.textContent=msg; el.classList.remove('hidden');
-  clearTimeout(window._toastTimer);
-  window._toastTimer=setTimeout(()=>el.classList.add('hidden'),2500);
+// ═══════════════════════════════════════════════════
+function toast(msg){
+  const el=document.getElementById('toast'), ml=document.getElementById('toast-msg');
+  ml.textContent=msg; el.classList.remove('hidden');
+  clearTimeout(window._tt); window._tt=setTimeout(()=>el.classList.add('hidden'),2500);
 }
 
-// ════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════
 //  BOOT
-// ════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════
 go('dashboard');
 </script>
 </body>
