@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Sales Forecasting & Incentive Tool</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: #f8fafc; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    .nav-btn { transition: background 0.15s, color 0.15s; }
+    .nav-btn.active { background: #2563eb; color: #fff; }
+    .nav-btn:not(.active):hover { background: #f1f5f9; }
+    input[type=number]::-webkit-inner-spin-button { opacity: 1; }
+  </style>
+</head>
+<body class="bg-slate-50 text-gray-900 font-sans antialiased">
+
+<div class="flex h-screen overflow-hidden">
+
+  <!-- ── Sidebar ── -->
+  <aside class="w-52 bg-white border-r border-gray-200 flex flex-col flex-shrink-0 shadow-sm">
+    <div class="px-5 py-4 border-b border-gray-100">
+      <p class="text-lg font-bold text-gray-900">📈 Sales Tool</p>
+      <p class="text-[11px] text-gray-400 mt-0.5">Forecasting & Incentives</p>
+    </div>
+    <nav class="flex-1 px-3 py-3 space-y-0.5" id="nav">
+      <button class="nav-btn w-full text-left px-3 py-2 rounded-lg text-sm font-medium text-gray-700" data-page="dashboard"  onclick="go('dashboard')">📊 Dashboard</button>
+      <button class="nav-btn w-full text-left px-3 py-2 rounded-lg text-sm font-medium text-gray-700" data-page="opportunities" onclick="go('opportunities')">🎯 Opportunities</button>
+      <button class="nav-btn w-full text-left px-3 py-2 rounded-lg text-sm font-medium text-gray-700" data-page="collections" onclick="go('collections')">💰 Collections</button>
+      <button class="nav-btn w-full text-left px-3 py-2 rounded-lg text-sm font-medium text-gray-700" data-page="incentives"  onclick="go('incentives')">🏆 Incentives</button>
+      <button class="nav-btn w-full text-left px-3 py-2 rounded-lg text-sm font-medium text-gray-700" data-page="settings"   onclick="go('settings')">⚙️ Settings</button>
+    </nav>
+    <div class="px-4 py-3 border-t border-gray-100">
+      <p class="text-[10px] text-gray-300">FY: Apr – Mar</p>
+    </div>
+  </aside>
+
+  <!-- ── Main ── -->
+  <main class="flex-1 overflow-y-auto">
+    <div id="app" class="p-7 max-w-5xl mx-auto"></div>
+  </main>
+</div>
+
+<!-- ── Toast ── -->
+<div id="toast" class="fixed bottom-6 right-6 z-50 hidden">
+  <div class="bg-gray-900 text-white text-sm px-4 py-2.5 rounded-lg shadow-xl" id="toast-msg"></div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════
+//  CONSTANTS
+// ════════════════════════════════════════════════
+const MONTHS = ['January','February','March','April','May','June',
+                'July','August','September','October','November','December'];
+const STATUS  = ['Open','Commit','Best Case','Won','Lost'];
+const OPEN_ST = ['Open','Commit','Best Case'];
+const STATUS_COLOR = {
+  Open:'bg-blue-100 text-blue-700', Commit:'bg-violet-100 text-violet-700',
+  'Best Case':'bg-amber-100 text-amber-700', Won:'bg-emerald-100 text-emerald-700',
+  Lost:'bg-red-100 text-red-700',
+};
+
+// ════════════════════════════════════════════════
+//  DATA LAYER  (localStorage)
+// ════════════════════════════════════════════════
+const ls = {
+  get: (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
+  set: (k, v) => localStorage.setItem(k, JSON.stringify(v)),
+};
+const opps    = () => ls.get('opps', []);
+const cols    = () => ls.get('cols', []);
+const cfg     = () => ls.get('cfg', { am_pct:5, csm_pct:3, reps:[] });
+const setOpps = v  => ls.set('opps', v);
+const setCols = v  => ls.set('cols', v);
+const setCfg  = v  => ls.set('cfg', v);
+const uid     = arr => arr.length ? Math.max(...arr.map(x=>x.id))+1 : 1;
+
+// ════════════════════════════════════════════════
+//  FY HELPERS
+// ════════════════════════════════════════════════
+function fyq(mIdx, yr) {
+  const m = mIdx + 1;
+  let q, s;
+  if (m >= 4) { s = yr;   q = m<=6?'Q1':m<=9?'Q2':'Q3'; }
+  else        { s = yr-1; q = 'Q4'; }
+  return { q, fy: `FY${s}-${String(s+1).slice(2)}` };
+}
+function nowFy() { const n=new Date(); return fyq(n.getMonth(), n.getFullYear()).fy; }
+const inr = n => '₹' + Number(n).toLocaleString('en-IN', {maximumFractionDigits:0});
+
+// ════════════════════════════════════════════════
+//  ROUTER
+// ════════════════════════════════════════════════
+let page = 'dashboard';
+let charts = {};
+let oppMode = 'list';   // list | add | edit
+let colMode = 'list';   // list | add
+let editId  = null;
+
+function go(p) {
+  page = p; oppMode = 'list'; colMode = 'list';
+  Object.values(charts).forEach(c => c.destroy()); charts = {};
+  document.querySelectorAll('.nav-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.page === p);
+    if (b.dataset.page !== p) b.classList.add('text-gray-700');
+    else b.classList.remove('text-gray-700');
+  });
+  render();
+}
+
+function render() {
+  const el = document.getElementById('app');
+  el.innerHTML = '';
+  ({ dashboard, opportunities, collections, incentives, settings })[page]();
+}
+
+// ════════════════════════════════════════════════
+//  SHARED COMPONENTS
+// ════════════════════════════════════════════════
+function card(html, cls='') {
+  return `<div class="bg-white rounded-xl border border-gray-200 ${cls}">${html}</div>`;
+}
+function metric(label, val, sub='') {
+  return card(`
+    <p class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">${label}</p>
+    <p class="text-2xl font-bold text-gray-900 mt-1">${val}</p>
+    ${sub ? `<p class="text-xs text-gray-400 mt-0.5">${sub}</p>` : ''}
+  `, 'p-5');
+}
+function badge(s) {
+  return `<span class="px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[s]||'bg-gray-100 text-gray-500'}">${s}</span>`;
+}
+function typeBadge(t) {
+  const c = t==='AM' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700';
+  return `<span class="px-2 py-0.5 rounded-full text-xs font-medium ${c}">${t}</span>`;
+}
+function pageHeader(title, sub, btnHtml='') {
+  return `<div class="flex items-start justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">${title}</h1>
+      ${sub ? `<p class="text-sm text-gray-400 mt-0.5">${sub}</p>` : ''}
+    </div>
+    ${btnHtml}
+  </div>`;
+}
+function input(id, type, val, cls='') {
+  return `<input id="${id}" type="${type}" value="${val}" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${cls}" />`;
+}
+function select(id, opts, sel, cls='') {
+  const options = opts.map(o => {
+    const v = typeof o==='object' ? o.v : o;
+    const l = typeof o==='object' ? o.l : o;
+    return `<option value="${v}" ${v==sel?'selected':''}>${l}</option>`;
+  }).join('');
+  return `<select id="${id}" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${cls}">${options}</select>`;
+}
+function label(text) {
+  return `<label class="block text-xs font-medium text-gray-500 mb-1">${text}</label>`;
+}
+function formRow(...fields) {
+  return `<div class="grid grid-cols-${fields.length} gap-4">${fields.map(f=>`<div>${f}</div>`).join('')}</div>`;
+}
+function emptyState(msg) {
+  return `<div class="text-center py-16 text-gray-300">
+    <p class="text-4xl mb-3">📭</p>
+    <p class="text-sm">${msg}</p>
+  </div>`;
+}
+
+// ════════════════════════════════════════════════
+//  DASHBOARD
+// ════════════════════════════════════════════════
+function dashboard() {
+  const all  = opps();
+  const fy   = nowFy();
+  const fyo  = all.filter(o => o.fy === fy);
+  const openV = fyo.filter(o => OPEN_ST.includes(o.status)).reduce((s,o)=>s+o.value,0);
+  const wonV  = fyo.filter(o => o.status==='Won').reduce((s,o)=>s+o.value,0);
+  const lostV = fyo.filter(o => o.status==='Lost').reduce((s,o)=>s+o.value,0);
+
+  document.getElementById('app').innerHTML = `
+    ${pageHeader('Dashboard', `Pipeline overview · ${fy}`)}
+    <div class="grid grid-cols-4 gap-4 mb-5">
+      ${metric('Open Pipeline', inr(openV))}
+      ${metric('Won', inr(wonV))}
+      ${metric('Lost', inr(lostV))}
+      ${metric('Total Deals', fyo.length, fy)}
+    </div>
+    <div class="grid grid-cols-2 gap-4 mb-4">
+      ${card('<p class="text-sm font-semibold text-gray-700 mb-3">Pipeline by Quarter & Status</p><canvas id="ch-q" height="210"></canvas>', 'p-5')}
+      ${card('<p class="text-sm font-semibold text-gray-700 mb-3">Status Breakdown</p><canvas id="ch-s" height="210"></canvas>', 'p-5')}
+    </div>
+    ${card('<p class="text-sm font-semibold text-gray-700 mb-3">Rep-wise Pipeline (Open + Won)</p><canvas id="ch-r" height="120"></canvas>', 'p-5')}
+  `;
+
+  const qs = ['Q1','Q2','Q3','Q4'];
+  const sc = { Open:'#3b82f6', Commit:'#8b5cf6', 'Best Case':'#f59e0b', Won:'#10b981', Lost:'#ef4444' };
+
+  charts.q = new Chart(document.getElementById('ch-q'), {
+    type: 'bar',
+    data: {
+      labels: qs,
+      datasets: STATUS.map(s => ({
+        label: s,
+        data: qs.map(q => fyo.filter(o=>o.quarter===q&&o.status===s).reduce((a,o)=>a+o.value,0)),
+        backgroundColor: sc[s],
+      })),
+    },
+    options: { responsive:true, plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}}}, scales:{x:{grid:{display:false}},y:{ticks:{callback:v=>'₹'+Number(v).toLocaleString('en-IN',{notation:'compact'})}}} },
+  });
+
+  const stTotals = STATUS.map(s => fyo.filter(o=>o.status===s).reduce((a,o)=>a+o.value,0));
+  charts.s = new Chart(document.getElementById('ch-s'), {
+    type: 'doughnut',
+    data: { labels:STATUS, datasets:[{data:stTotals, backgroundColor:Object.values(sc), borderWidth:2}] },
+    options: { responsive:true, plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}}} },
+  });
+
+  const repMap = {};
+  fyo.filter(o=>[...OPEN_ST,'Won'].includes(o.status)).forEach(o => { repMap[o.rep_name]=(repMap[o.rep_name]||0)+o.value; });
+  charts.r = new Chart(document.getElementById('ch-r'), {
+    type: 'bar',
+    data: { labels:Object.keys(repMap), datasets:[{label:'Value',data:Object.values(repMap),backgroundColor:'#3b82f6',borderRadius:4}] },
+    options: { responsive:true, indexAxis:'y', plugins:{legend:{display:false}}, scales:{x:{ticks:{callback:v=>'₹'+Number(v).toLocaleString('en-IN',{notation:'compact'})}},y:{grid:{display:false}}} },
+  });
+}
+
+// ════════════════════════════════════════════════
+//  OPPORTUNITIES
+// ════════════════════════════════════════════════
+function opportunities() {
+  document.getElementById('app').innerHTML = `
+    ${pageHeader('Opportunities','Track your deals',
+      `<button onclick="oppMode='add';render()" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg">+ Add Deal</button>`
+    )}
+    <div id="opp-body"></div>
+  `;
+  if (oppMode==='add' || oppMode==='edit') renderOppForm();
+  else renderOppList();
+}
+
+function renderOppList() {
+  const all = opps();
+  const fys = [...new Set(all.map(o=>o.fy))].sort().reverse();
+
+  document.getElementById('opp-body').innerHTML = `
+    <div class="flex flex-wrap gap-2 mb-4">
+      ${select('f-fy', [{v:'',l:'All FY'},...fys.map(f=>({v:f,l:f}))], '', 'w-auto')}
+      ${select('f-q',  [{v:'',l:'All Quarters'},...['Q1','Q2','Q3','Q4'].map(q=>({v:q,l:q}))], '', 'w-auto')}
+      ${select('f-st', [{v:'',l:'All Status'},...STATUS.map(s=>({v:s,l:s}))], '', 'w-auto')}
+    </div>
+    <div id="opp-tbl"></div>
+  `;
+  document.getElementById('f-fy').onchange =
+  document.getElementById('f-q').onchange  =
+  document.getElementById('f-st').onchange = filterOpps;
+  filterOpps();
+}
+
+function filterOpps() {
+  const fy = document.getElementById('f-fy').value;
+  const q  = document.getElementById('f-q').value;
+  const st = document.getElementById('f-st').value;
+  let data = opps();
+  if (fy) data = data.filter(o=>o.fy===fy);
+  if (q)  data = data.filter(o=>o.quarter===q);
+  if (st) data = data.filter(o=>o.status===st);
+
+  const total = data.reduce((s,o)=>s+o.value,0);
+  document.getElementById('opp-tbl').innerHTML = data.length === 0
+    ? card(emptyState('No opportunities found.'), 'p-0 overflow-hidden')
+    : card(`
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 border-b border-gray-100">
+          <tr>${['Opportunity','Client','Rep','Value','Close','Quarter','Status',''].map(h=>`<th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">${h}</th>`).join('')}</tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+          ${data.map(o=>`
+            <tr class="hover:bg-slate-50">
+              <td class="px-4 py-3 font-medium">${o.opportunity_name}</td>
+              <td class="px-4 py-3 text-gray-500">${o.client_name}</td>
+              <td class="px-4 py-3">${o.rep_name} ${typeBadge(o.rep_type)}</td>
+              <td class="px-4 py-3 font-semibold">${inr(o.value)}</td>
+              <td class="px-4 py-3 text-gray-500 text-xs">${o.close_month} ${o.close_year}</td>
+              <td class="px-4 py-3 text-xs text-gray-500">${o.quarter} · ${o.fy}</td>
+              <td class="px-4 py-3">${badge(o.status)}</td>
+              <td class="px-4 py-3 whitespace-nowrap">
+                <button onclick="startEditOpp(${o.id})" class="text-blue-500 hover:underline text-xs mr-2">Edit</button>
+                <button onclick="delOpp(${o.id})" class="text-red-400 hover:underline text-xs">Del</button>
+              </td>
+            </tr>`).join('')}
+        </tbody>
+        <tfoot class="bg-gray-50 border-t border-gray-100">
+          <tr>
+            <td colspan="3" class="px-4 py-3 text-xs text-gray-400">${data.length} deal${data.length!==1?'s':''}</td>
+            <td class="px-4 py-3 font-bold text-gray-800">${inr(total)}</td>
+            <td colspan="4"></td>
+          </tr>
+        </tfoot>
+      </table>`, 'overflow-hidden');
+}
+
+function startEditOpp(id) { editId=id; oppMode='edit'; render(); }
+function delOpp(id) {
+  if (!confirm('Delete this deal?')) return;
+  setOpps(opps().filter(o=>o.id!==id));
+  toast('Deal deleted'); render();
+}
+
+function renderOppForm() {
+  const c   = cfg();
+  const reps = c.reps || [];
+  const isEdit = oppMode==='edit';
+  const o   = isEdit ? opps().find(x=>x.id===editId) : null;
+  const now = new Date();
+
+  document.getElementById('opp-body').innerHTML = card(`
+    <div class="flex items-center justify-between mb-5">
+      <h2 class="text-base font-semibold">${isEdit?'Edit Deal':'New Deal'}</h2>
+      <button onclick="oppMode='list';render()" class="text-xs text-gray-400 hover:text-gray-600">← Back to list</button>
+    </div>
+    ${reps.length===0 ? `<div class="bg-amber-50 border border-amber-200 text-amber-800 text-sm p-3 rounded-lg mb-4">⚠️ Add reps in <button onclick="go('settings')" class="underline font-medium">Settings</button> first.</div>` : ''}
+    <div class="space-y-4">
+      ${formRow(
+        label('Opportunity Name *') + input('o-name','text', o?.opportunity_name||''),
+        label('Client Name *')      + input('o-client','text', o?.client_name||'')
+      )}
+      ${formRow(
+        label('Assign Rep *') + select('o-rep', reps.map(r=>({v:r.name,l:`${r.name} (${r.type})`})), o?.rep_name||''),
+        label('Value (₹) *')  + input('o-val','number', o?.value||'')
+      )}
+      ${formRow(
+        label('Expected Close Month *') + select('o-month', MONTHS.map((m,i)=>({v:i,l:m})), o ? MONTHS.indexOf(o.close_month) : now.getMonth()),
+        label('Expected Close Year *')  + input('o-year','number', o?.close_year||now.getFullYear())
+      )}
+      ${formRow(
+        label('Status *') + select('o-status', STATUS, o?.status||'Open'),
+        '<div></div>'
+      )}
+    </div>
+    <div class="flex gap-3 mt-6">
+      <button onclick="saveOpp(${isEdit?editId:'null'})" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg text-sm font-medium">
+        ${isEdit?'Save Changes':'Add Deal'}
+      </button>
+      <button onclick="oppMode='list';render()" class="border border-gray-200 text-gray-600 hover:bg-gray-50 px-5 py-2 rounded-lg text-sm">Cancel</button>
+    </div>
+  `, 'p-6');
+}
+
+function saveOpp(eid) {
+  const name   = document.getElementById('o-name').value.trim();
+  const client = document.getElementById('o-client').value.trim();
+  const repEl  = document.getElementById('o-rep');
+  const val    = parseFloat(document.getElementById('o-val').value);
+  const mIdx   = parseInt(document.getElementById('o-month').value);
+  const yr     = parseInt(document.getElementById('o-year').value);
+  const st     = document.getElementById('o-status').value;
+  if (!name||!client||isNaN(val)||val<0) { alert('Fill in all required fields.'); return; }
+  const c = cfg();
+  const repName = repEl?.value||'';
+  const repType = (c.reps.find(r=>r.name===repName)||{}).type||'AM';
+  const {q, fy} = fyq(mIdx, yr);
+  let data = opps();
+  if (eid!==null) {
+    data = data.map(o => o.id===eid
+      ? {...o, opportunity_name:name, client_name:client, rep_name:repName, rep_type:repType, value:val, close_month:MONTHS[mIdx], close_year:yr, quarter:q, fy, status:st}
+      : o);
+  } else {
+    data.push({ id:uid(data), opportunity_name:name, client_name:client, rep_name:repName, rep_type:repType, value:val, close_month:MONTHS[mIdx], close_year:yr, quarter:q, fy, status:st });
+  }
+  setOpps(data);
+  oppMode='list'; toast(eid ? 'Deal updated' : 'Deal added'); go('opportunities');
+}
+
+// ════════════════════════════════════════════════
+//  COLLECTIONS
+// ════════════════════════════════════════════════
+function collections() {
+  document.getElementById('app').innerHTML = `
+    ${pageHeader('Collections','Record actual money collected',
+      `<button onclick="colMode='add';render()" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg">+ Record</button>`
+    )}
+    <div id="col-body"></div>
+  `;
+  if (colMode==='add') renderColForm();
+  else renderColList();
+}
+
+function renderColList() {
+  const all = cols();
+  const years = [...new Set(all.map(c=>c.year))].sort((a,b)=>b-a);
+
+  document.getElementById('col-body').innerHTML = `
+    <div class="flex flex-wrap gap-2 mb-4">
+      ${select('cf-yr', [{v:'',l:'All Years'},...years.map(y=>({v:y,l:y}))], '', 'w-auto')}
+      ${select('cf-mo', [{v:'',l:'All Months'},...MONTHS.map(m=>({v:m,l:m}))], '', 'w-auto')}
+      ${select('cf-ty', [{v:'',l:'All Types'},{v:'AM',l:'AM'},{v:'CSM',l:'CSM'}], '', 'w-auto')}
+    </div>
+    <div id="col-tbl"></div>
+  `;
+  document.getElementById('cf-yr').onchange =
+  document.getElementById('cf-mo').onchange =
+  document.getElementById('cf-ty').onchange = filterCols;
+  filterCols();
+}
+
+function filterCols() {
+  const yr = document.getElementById('cf-yr').value;
+  const mo = document.getElementById('cf-mo').value;
+  const ty = document.getElementById('cf-ty').value;
+  let data = cols();
+  if (yr) data = data.filter(c=>String(c.year)===String(yr));
+  if (mo) data = data.filter(c=>c.month===mo);
+  if (ty) data = data.filter(c=>c.rep_type===ty);
+  const total = data.reduce((s,c)=>s+c.amount,0);
+
+  document.getElementById('col-tbl').innerHTML = data.length===0
+    ? card(emptyState('No collections recorded yet.'), 'p-0 overflow-hidden')
+    : card(`
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 border-b border-gray-100">
+          <tr>${['Rep','Type','Month','Year','Amount',''].map(h=>`<th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">${h}</th>`).join('')}</tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+          ${data.map(c=>`
+            <tr class="hover:bg-slate-50">
+              <td class="px-4 py-3 font-medium">${c.rep_name}</td>
+              <td class="px-4 py-3">${typeBadge(c.rep_type)}</td>
+              <td class="px-4 py-3 text-gray-500">${c.month}</td>
+              <td class="px-4 py-3 text-gray-500">${c.year}</td>
+              <td class="px-4 py-3 font-semibold">${inr(c.amount)}</td>
+              <td class="px-4 py-3"><button onclick="delCol(${c.id})" class="text-red-400 hover:underline text-xs">Del</button></td>
+            </tr>`).join('')}
+        </tbody>
+        <tfoot class="bg-gray-50 border-t border-gray-100">
+          <tr>
+            <td colspan="4" class="px-4 py-3 text-xs text-gray-400">${data.length} entr${data.length!==1?'ies':'y'}</td>
+            <td class="px-4 py-3 font-bold">${inr(total)}</td><td></td>
+          </tr>
+        </tfoot>
+      </table>`, 'overflow-hidden');
+}
+
+function delCol(id) {
+  if (!confirm('Delete this entry?')) return;
+  setCols(cols().filter(c=>c.id!==id));
+  toast('Entry deleted'); render();
+}
+
+function renderColForm() {
+  const c    = cfg();
+  const reps = c.reps||[];
+  const now  = new Date();
+
+  document.getElementById('col-body').innerHTML = card(`
+    <div class="flex items-center justify-between mb-5">
+      <h2 class="text-base font-semibold">Record Collection</h2>
+      <button onclick="colMode='list';render()" class="text-xs text-gray-400 hover:text-gray-600">← Back</button>
+    </div>
+    ${reps.length===0 ? `<div class="bg-amber-50 border border-amber-200 text-amber-800 text-sm p-3 rounded-lg mb-4">⚠️ Add reps in <button onclick="go('settings')" class="underline font-medium">Settings</button> first.</div>` : ''}
+    <div class="space-y-4">
+      ${formRow(
+        label('Rep *')        + select('c-rep', reps.map(r=>({v:r.name,l:`${r.name} (${r.type})`})), ''),
+        label('Amount (₹) *') + input('c-amt','number','')
+      )}
+      ${formRow(
+        label('Month *') + select('c-month', MONTHS.map((m,i)=>({v:m,l:m})), MONTHS[now.getMonth()]),
+        label('Year *')  + input('c-year','number', now.getFullYear())
+      )}
+    </div>
+    <div class="flex gap-3 mt-6">
+      <button onclick="saveCol()" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg text-sm font-medium">Record</button>
+      <button onclick="colMode='list';render()" class="border border-gray-200 text-gray-600 hover:bg-gray-50 px-5 py-2 rounded-lg text-sm">Cancel</button>
+    </div>
+  `, 'p-6');
+}
+
+function saveCol() {
+  const c       = cfg();
+  const repName = document.getElementById('c-rep').value;
+  const amt     = parseFloat(document.getElementById('c-amt').value);
+  const month   = document.getElementById('c-month').value;
+  const yr      = parseInt(document.getElementById('c-year').value);
+  if (!repName||isNaN(amt)||amt<=0) { alert('Fill in all required fields.'); return; }
+  const repType = (c.reps.find(r=>r.name===repName)||{}).type||'AM';
+  const data = cols();
+  data.push({ id:uid(data), rep_name:repName, rep_type:repType, month, year:yr, amount:amt });
+  setCols(data);
+  colMode='list'; toast('Collection recorded'); go('collections');
+}
+
+// ════════════════════════════════════════════════
+//  INCENTIVES
+// ════════════════════════════════════════════════
+function incentives() {
+  const all  = cols();
+  const yrs  = [...new Set(all.map(c=>c.year))].sort((a,b)=>b-a);
+
+  document.getElementById('app').innerHTML = `
+    ${pageHeader('Incentive Calculator','Collections × incentive rate')}
+    <div class="flex flex-wrap gap-2 mb-5">
+      ${select('i-yr', [{v:'',l:'All Years'},...yrs.map(y=>({v:y,l:y}))], '', 'w-auto')}
+      ${select('i-mo', [{v:'',l:'All Months'},...MONTHS.map(m=>({v:m,l:m}))], '', 'w-auto')}
+      ${select('i-ty', [{v:'',l:'All Types'},{v:'AM',l:'AM'},{v:'CSM',l:'CSM'}], '', 'w-auto')}
+    </div>
+    <div id="i-metrics" class="grid grid-cols-3 gap-4 mb-5"></div>
+    <div id="i-table" class="mb-5"></div>
+    ${card('<p class="text-sm font-semibold text-gray-700 mb-3">Incentive vs Collections by Rep</p><canvas id="ch-i" height="130"></canvas>', 'p-5')}
+  `;
+
+  document.getElementById('i-yr').onchange =
+  document.getElementById('i-mo').onchange =
+  document.getElementById('i-ty').onchange = calcIncentives;
+  calcIncentives();
+}
+
+function calcIncentives() {
+  const c      = cfg();
+  const amPct  = c.am_pct  || 5;
+  const csmPct = c.csm_pct || 3;
+  const reps   = c.reps    || [];
+  const selYr  = document.getElementById('i-yr').value;
+  const selMo  = document.getElementById('i-mo').value;
+  const selTy  = document.getElementById('i-ty').value;
+
+  let data = cols();
+  if (selYr) data = data.filter(x=>String(x.year)===String(selYr));
+  if (selMo) data = data.filter(x=>x.month===selMo);
+  if (selTy) data = data.filter(x=>x.rep_type===selTy);
+
+  const repMap = {};
+  data.forEach(x => {
+    if (!repMap[x.rep_name]) repMap[x.rep_name] = { type:x.rep_type, total:0 };
+    repMap[x.rep_name].total += x.amount;
+  });
+
+  const rows = Object.entries(repMap).map(([name, {type, total}]) => {
+    const custom = (reps.find(r=>r.name===name)||{}).custom_pct;
+    const rate   = custom !== undefined ? custom : (type==='AM' ? amPct : csmPct);
+    return { name, type, total, rate, incentive: total*rate/100 };
+  });
+
+  const sumCol = rows.reduce((s,r)=>s+r.total, 0);
+  const sumInc = rows.reduce((s,r)=>s+r.incentive, 0);
+
+  document.getElementById('i-metrics').innerHTML = `
+    ${metric('Total Collections', inr(sumCol))}
+    ${metric('Total Incentive Payout', inr(sumInc))}
+    ${metric('AM Rate / CSM Rate', `${amPct}% / ${csmPct}%`)}
+  `;
+
+  document.getElementById('i-table').innerHTML = rows.length===0
+    ? card(emptyState('No collections for this period.'), 'p-0 overflow-hidden')
+    : card(`
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 border-b border-gray-100">
+          <tr>${['Rep','Type','Collections','Rate','Incentive'].map(h=>`<th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">${h}</th>`).join('')}</tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+          ${rows.map(r=>`
+            <tr class="hover:bg-slate-50">
+              <td class="px-4 py-3 font-medium">${r.name}</td>
+              <td class="px-4 py-3">${typeBadge(r.type)}</td>
+              <td class="px-4 py-3">${inr(r.total)}</td>
+              <td class="px-4 py-3 text-gray-500">${r.rate}%${(c.reps.find(x=>x.name===r.name)||{}).custom_pct!==undefined?' <span class="text-xs text-violet-500">(custom)</span>':''}</td>
+              <td class="px-4 py-3 font-bold text-emerald-600">${inr(r.incentive)}</td>
+            </tr>`).join('')}
+        </tbody>
+        <tfoot class="bg-gray-50 border-t border-gray-100">
+          <tr>
+            <td colspan="2" class="px-4 py-3 text-xs text-gray-400">${rows.length} rep${rows.length!==1?'s':''}</td>
+            <td class="px-4 py-3 font-bold">${inr(sumCol)}</td>
+            <td></td>
+            <td class="px-4 py-3 font-bold text-emerald-600">${inr(sumInc)}</td>
+          </tr>
+        </tfoot>
+      </table>`, 'overflow-hidden');
+
+  if (charts.i) { charts.i.destroy(); delete charts.i; }
+  if (rows.length > 0) {
+    charts.i = new Chart(document.getElementById('ch-i'), {
+      type: 'bar',
+      data: {
+        labels: rows.map(r=>r.name),
+        datasets: [
+          { label:'Collections', data:rows.map(r=>r.total),     backgroundColor:'#93c5fd', borderRadius:4 },
+          { label:'Incentive',   data:rows.map(r=>r.incentive), backgroundColor:'#6ee7b7', borderRadius:4 },
+        ],
+      },
+      options: { responsive:true, plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}}}, scales:{x:{grid:{display:false}},y:{ticks:{callback:v=>'₹'+Number(v).toLocaleString('en-IN',{notation:'compact'})}}} },
+    });
+  }
+}
+
+// ════════════════════════════════════════════════
+//  SETTINGS
+// ════════════════════════════════════════════════
+function settings() {
+  const c    = cfg();
+  const reps = c.reps||[];
+
+  document.getElementById('app').innerHTML = `
+    ${pageHeader('Settings','Configure reps and incentive rates')}
+    <div class="grid grid-cols-2 gap-5 mb-5">
+      ${card(`
+        <h2 class="text-sm font-semibold text-gray-800 mb-4">Default Incentive Rates</h2>
+        <div class="space-y-4">
+          <div>${label('AM Incentive %')}${input('s-am','number',c.am_pct)}</div>
+          <div>${label('CSM Incentive %')}${input('s-csm','number',c.csm_pct)}</div>
+          <button onclick="saveRates()" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-medium">Save Rates</button>
+        </div>
+      `, 'p-5')}
+      ${card(`
+        <h2 class="text-sm font-semibold text-gray-800 mb-4">Add New Rep</h2>
+        <div class="space-y-4">
+          <div>${label('Name *')}${input('s-rname','text','')}</div>
+          <div>${label('Type *')}${select('s-rtype',[{v:'AM',l:'AM (Account Manager)'},{v:'CSM',l:'CSM (Customer Success)'}],'AM')}</div>
+          <div class="flex items-center gap-2">
+            <input type="checkbox" id="s-cust-chk" onchange="document.getElementById('s-cust-wrap').classList.toggle('hidden',!this.checked)" class="rounded border-gray-300 text-blue-600" />
+            <label for="s-cust-chk" class="text-xs text-gray-600">Custom incentive rate for this rep</label>
+          </div>
+          <div id="s-cust-wrap" class="hidden">
+            ${label('Custom Rate (%)')}${input('s-cpct','number',c.am_pct)}
+          </div>
+          <button onclick="addRep()" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-medium">Add Rep</button>
+        </div>
+      `, 'p-5')}
+    </div>
+    <div>
+      ${reps.length===0 ? card(emptyState('No reps yet. Add one above.'),'p-0 overflow-hidden') : card(`
+        <h2 class="text-sm font-semibold text-gray-800 mb-0 px-4 py-3 border-b border-gray-100">Reps</h2>
+        <table class="w-full text-sm">
+          <thead class="bg-gray-50">
+            <tr>${['Name','Type','Incentive Rate',''].map(h=>`<th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">${h}</th>`).join('')}</tr>
+          </thead>
+          <tbody class="divide-y divide-gray-50">
+            ${reps.map(r=>`
+              <tr class="hover:bg-slate-50">
+                <td class="px-4 py-3 font-medium">${r.name}</td>
+                <td class="px-4 py-3">${typeBadge(r.type)}</td>
+                <td class="px-4 py-3 text-gray-500">${r.custom_pct!==undefined ? `${r.custom_pct}% <span class="text-violet-500 text-xs">(custom)</span>` : `Default (${r.type==='AM'?c.am_pct:c.csm_pct}%)`}</td>
+                <td class="px-4 py-3"><button onclick="delRep('${r.name}')" class="text-red-400 hover:underline text-xs">Remove</button></td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      `, 'overflow-hidden')}
+    </div>
+  `;
+}
+
+function saveRates() {
+  const c = cfg();
+  c.am_pct  = parseFloat(document.getElementById('s-am').value)  || 5;
+  c.csm_pct = parseFloat(document.getElementById('s-csm').value) || 3;
+  setCfg(c); toast('Rates saved!'); go('settings');
+}
+
+function addRep() {
+  const name  = document.getElementById('s-rname').value.trim();
+  const type  = document.getElementById('s-rtype').value;
+  const cust  = document.getElementById('s-cust-chk').checked;
+  const cpct  = parseFloat(document.getElementById('s-cpct')?.value);
+  if (!name) { alert('Name is required.'); return; }
+  const c = cfg();
+  c.reps = c.reps||[];
+  if (c.reps.some(r=>r.name.toLowerCase()===name.toLowerCase())) { alert('Rep already exists.'); return; }
+  const rep = { name, type };
+  if (cust && !isNaN(cpct)) rep.custom_pct = cpct;
+  c.reps.push(rep);
+  setCfg(c); toast(`Added ${name} (${type})`); go('settings');
+}
+
+function delRep(name) {
+  if (!confirm(`Remove ${name}?`)) return;
+  const c = cfg();
+  c.reps = (c.reps||[]).filter(r=>r.name!==name);
+  setCfg(c); toast(`Removed ${name}`); go('settings');
+}
+
+// ════════════════════════════════════════════════
+//  TOAST
+// ════════════════════════════════════════════════
+function toast(msg) {
+  const el  = document.getElementById('toast');
+  const msg_el = document.getElementById('toast-msg');
+  msg_el.textContent = msg;
+  el.classList.remove('hidden');
+  clearTimeout(window._toastTimer);
+  window._toastTimer = setTimeout(() => el.classList.add('hidden'), 2500);
+}
+
+// ════════════════════════════════════════════════
+//  BOOT
+// ════════════════════════════════════════════════
+go('dashboard');
+</script>
+</body>
+</html>
