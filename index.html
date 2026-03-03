@@ -778,6 +778,36 @@ function exportAccs(){
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download='accounts_export.csv'; a.click();
   toast('Exported!');
 }
+
+// ── Generic CSV download util ──
+function downloadCSV(filename, headers, rows){
+  if(!rows.length){toast('No data to export.');return;}
+  const csv=[headers,...rows].map(row=>row.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})); a.download=filename; a.click();
+  toast('Downloaded!');
+}
+function downloadOppsCSV(){
+  const data=opps(); if(!data.length){toast('No opportunities to export.');return;}
+  downloadCSV('opportunities.csv',
+    ['Opportunity Name','Client','Rep','Type','Value','Close Month','Close Year','Quarter','FY','Status','Deal Type'],
+    data.map(o=>[o.opportunity_name,o.client_name,o.rep_name,o.rep_type,o.value,o.close_month,o.close_year,o.quarter,o.fy,o.status,o.deal_type||'Regular'])
+  );
+}
+function downloadColsCSV(){
+  const data=cols(); if(!data.length){toast('No collections to export.');return;}
+  downloadCSV('collections.csv',
+    ['ID','Rep Name','Rep Type','Customer Name','Regular Amount','Upsell Amount','Month','Year'],
+    data.map(c=>[c.id,c.rep_name,c.rep_type,c.customer_name,c.regular_amount??0,c.upsell_amount??0,c.month,c.year])
+  );
+}
+let _incRows=[];
+function downloadIncentivesCSV(){
+  if(!_incRows.length){toast('No incentive data to export.');return;}
+  downloadCSV('incentives.csv',
+    ['Rep','Type','Regular Collected','Regular Rate %','Regular Incentive','Upsell Collected','Upsell Rate %','Upsell Incentive','Total Incentive'],
+    _incRows.map(r=>[r.name,r.type,r.reg,r.rRate,Math.round(r.regInc),r.ups,r.uRate,Math.round(r.upsInc),Math.round(r.totalInc)])
+  );
+}
 function createOppFromAcc(id){
   const a=accs().find(x=>x.id===id); if(!a)return;
   const rd=a.renewal_date?new Date(a.renewal_date):new Date();
@@ -795,7 +825,14 @@ function reports(){
   const fys=[...new Set(allO.map(o=>o.fy))].sort().reverse();
 
   document.getElementById('app').innerHTML=`
-    ${pageHeader('Reports','Analytics across accounts, pipeline & collections')}
+    ${pageHeader('Reports','Analytics across accounts, pipeline & collections',`
+      <div class="flex flex-wrap gap-2">
+        <button onclick="exportAccs()" class="border text-slate-400 hover:bg-white/5 text-sm font-medium px-3 py-2 rounded-xl transition" style="border-color:rgba(255,255,255,0.12)">↓ Accounts</button>
+        <button onclick="downloadOppsCSV()" class="border text-slate-400 hover:bg-white/5 text-sm font-medium px-3 py-2 rounded-xl transition" style="border-color:rgba(255,255,255,0.12)">↓ Pipeline</button>
+        <button onclick="downloadColsCSV()" class="border text-slate-400 hover:bg-white/5 text-sm font-medium px-3 py-2 rounded-xl transition" style="border-color:rgba(255,255,255,0.12)">↓ Collections</button>
+        <button onclick="downloadIncentivesCSV()" class="border text-emerald-400 hover:bg-emerald-500/10 text-sm font-medium px-3 py-2 rounded-xl transition" style="border-color:rgba(16,185,129,0.35)">↓ Incentives</button>
+      </div>`
+    )}
 
     <div class="card p-4 mb-6 flex flex-wrap gap-3 items-center">
       <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Filters</span>
@@ -982,7 +1019,7 @@ function renderReportCharts(){
       const d=new Date(now.getFullYear(),now.getMonth()-i,1);
       pts.push({label:MONTHS[d.getMonth()].slice(0,3)+' '+d.getFullYear(),m:MONTHS[d.getMonth()],y:d.getFullYear()});
     }
-    const vals=pts.map(p=>filtC.filter(c=>c.month===p.m&&Number(c.year)===p.y).reduce((s,c)=>s+c.amount,0));
+    const vals=pts.map(p=>filtC.filter(c=>c.month===p.m&&Number(c.year)===p.y).reduce((s,c)=>s+(c.regular_amount??0)+(c.upsell_amount??0)+(c.amount??0),0));
     charts['rp-coll-trend']=new Chart(document.getElementById('rp-coll-trend'),{
       type:'line',
       data:{labels:pts.map(p=>p.label),datasets:[{label:'Collections',data:vals,borderColor:'#10b981',backgroundColor:'rgba(16,185,129,.12)',fill:true,tension:0.4,pointBackgroundColor:'#10b981',pointRadius:4}]},
@@ -994,23 +1031,15 @@ function renderReportCharts(){
   if(document.getElementById('rp-incentive')){
     const c=cfg(), amPct=c.am_pct||5, csmPct=c.csm_pct||3;
     const amUp=c.am_upsell_pct||8, csmUp=c.csm_upsell_pct||6, reps=c.reps||[];
-    const rdMap={};
+    const repMap={};
     filtC.forEach(x=>{
-      const key=x.rep_name+'||'+(x.deal_type||'Regular');
-      if(!rdMap[key])rdMap[key]={name:x.rep_name,type:x.rep_type,deal_type:x.deal_type||'Regular',total:0};
-      rdMap[key].total+=x.amount;
+      if(!repMap[x.rep_name])repMap[x.rep_name]={type:x.rep_type,reg:0,ups:0};
+      if(x.regular_amount!==undefined){repMap[x.rep_name].reg+=x.regular_amount||0;repMap[x.rep_name].ups+=x.upsell_amount||0;}
+      else{if((x.deal_type||'Regular')==='Upsell/Cross-sell')repMap[x.rep_name].ups+=x.amount||0;else repMap[x.rep_name].reg+=x.amount||0;}
     });
-    const rrows=Object.values(rdMap).map(({name,type,deal_type,total})=>{
-      const custom=(reps.find(r=>r.name===name)||{}).custom_pct;
-      let rate;
-      if(custom!==undefined) rate=custom;
-      else if(deal_type==='Upsell/Cross-sell') rate=type==='AM'?amUp:csmUp;
-      else rate=type==='AM'?amPct:csmPct;
-      return{name,deal_type,incentive:total*rate/100};
-    });
-    const repNames=[...new Set(rrows.map(r=>r.name))];
-    const regD=repNames.map(n=>rrows.filter(r=>r.name===n&&r.deal_type==='Regular').reduce((s,r)=>s+r.incentive,0));
-    const upD=repNames.map(n=>rrows.filter(r=>r.name===n&&r.deal_type==='Upsell/Cross-sell').reduce((s,r)=>s+r.incentive,0));
+    const repNames=Object.keys(repMap);
+    const regD=repNames.map(n=>{const{type,reg}=repMap[n];const custom=(reps.find(r=>r.name===n)||{}).custom_pct;const rate=custom!==undefined?custom:(type==='AM'?amPct:csmPct);return reg*rate/100;});
+    const upD=repNames.map(n=>{const{type,ups}=repMap[n];const custom=(reps.find(r=>r.name===n)||{}).custom_pct;const rate=custom!==undefined?custom:(type==='AM'?amUp:csmUp);return ups*rate/100;});
     charts['rp-incentive']=new Chart(document.getElementById('rp-incentive'),{
       type:'bar',
       data:{labels:repNames,datasets:[
@@ -1028,7 +1057,10 @@ function renderReportCharts(){
 function opportunities(){
   document.getElementById('app').innerHTML=`
     ${pageHeader('Opportunities','Track your deals',
-      `<button onclick="oppMode='add';render()" class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold px-4 py-2 rounded-xl shadow shadow-indigo-200">+ Add Deal</button>`
+      `<div class="flex gap-2">
+        <button onclick="downloadOppsCSV()" class="border border-emerald-200 text-emerald-600 hover:bg-emerald-50 text-sm font-medium px-3 py-2 rounded-xl transition">↓ Export CSV</button>
+        <button onclick="oppMode='add';render()" class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold px-4 py-2 rounded-xl shadow shadow-indigo-200">+ Add Deal</button>
+      </div>`
     )}
     <div id="opp-body"></div>
   `;
@@ -1136,6 +1168,7 @@ function collections(){
     ${pageHeader('Collections','Invoice-level collection records',`
       <div class="flex gap-2 flex-wrap">
         <button onclick="downloadColTemplate()" class="border text-slate-400 hover:bg-white/5 text-sm font-medium px-3 py-2 rounded-xl transition" style="border-color:rgba(255,255,255,0.1)">↓ Template</button>
+        <button onclick="downloadColsCSV()" class="border text-emerald-400 text-sm font-medium px-3 py-2 rounded-xl transition hover:bg-emerald-500/10" style="border-color:rgba(16,185,129,0.35)">↓ Export CSV</button>
         <button onclick="colMode='import';render()" class="border text-indigo-400 text-sm font-medium px-3 py-2 rounded-xl transition hover:bg-indigo-500/10" style="border-color:rgba(99,102,241,0.35)">↑ Import CSV</button>
         <button onclick="colMode='add';render()" class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold px-4 py-2 rounded-xl shadow shadow-indigo-900/40">+ Add Entry</button>
       </div>`
@@ -1426,7 +1459,10 @@ function incentives(){
             <p class="text-sm font-bold text-slate-700">AM: ${c.am_upsell_pct||8}% &nbsp;·&nbsp; CSM: ${c.csm_upsell_pct||6}%</p>
           </div>
         </div>
-        <button onclick="go('settings')" class="ml-auto text-xs text-indigo-400 hover:underline border rounded-lg px-3 py-1.5" style="border-color:rgba(99,102,241,0.3)">✎ Edit Rates</button>
+        <div class="ml-auto flex gap-2">
+          <button onclick="downloadIncentivesCSV()" class="text-xs text-emerald-400 hover:underline border rounded-lg px-3 py-1.5" style="border-color:rgba(16,185,129,0.3)">↓ Download</button>
+          <button onclick="go('settings')" class="text-xs text-indigo-400 hover:underline border rounded-lg px-3 py-1.5" style="border-color:rgba(99,102,241,0.3)">✎ Edit Rates</button>
+        </div>
         <div class="flex flex-wrap gap-2">
           ${sel('i-yr',[{v:'',l:'All Years'},...yrs.map(y=>({v:y,l:y}))], '', 'w-auto')}
           ${sel('i-mo',[{v:'',l:'All Months'},...MONTHS.map(m=>({v:m,l:m}))], '', 'w-auto')}
@@ -1468,13 +1504,14 @@ function calcIncentives(){
     }
   });
 
-  const rows=Object.entries(repMap).map(([name,{type,reg,ups}])=>{
+  _incRows=Object.entries(repMap).map(([name,{type,reg,ups}])=>{
     const custom=(reps.find(r=>r.name===name)||{}).custom_pct;
     const rRate=custom!==undefined?custom:(type==='AM'?amPct:csmPct);
     const uRate=custom!==undefined?custom:(type==='AM'?amUp:csmUp);
     const regInc=reg*rRate/100, upsInc=ups*uRate/100;
     return{name,type,reg,ups,rRate,uRate,regInc,upsInc,totalColl:reg+ups,totalInc:regInc+upsInc};
   }).sort((a,b)=>b.totalInc-a.totalInc);
+  const rows=_incRows;
 
   const sumReg=rows.reduce((s,r)=>s+r.reg,0);
   const sumUps=rows.reduce((s,r)=>s+r.ups,0);
@@ -1577,12 +1614,8 @@ function settings(){
 
     ${sectionHead('Data Management','🗄️')}
     ${card(`
-      <p class="text-sm text-slate-600 mb-4">Load demo data to explore all features, or clear everything to start fresh.</p>
-      <div class="flex gap-3 flex-wrap">
-        <button onclick="loadSampleData(true);go('dashboard')" class="bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-sm font-semibold px-4 py-2.5 rounded-xl shadow shadow-indigo-900/40 transition hover:opacity-90">↺ Reload Sample Data</button>
-        <button onclick="if(confirm('Clear ALL data? This cannot be undone.'))clearAllData()" class="border text-red-400 text-sm font-medium px-4 py-2.5 rounded-xl transition" style="border-color:rgba(239,68,68,0.3);background:rgba(239,68,68,0.05)">✕ Clear All Data</button>
-      </div>
-      <p class="text-xs text-slate-500 mt-3">Sample data: 10 Indian enterprise accounts · 12 opportunities · 19 collection entries for FY2025-26</p>
+      <p class="text-sm text-slate-600 mb-4">Permanently delete all accounts, opportunities, collections and configuration.</p>
+      <button onclick="if(confirm('Clear ALL data? This cannot be undone.'))clearAllData()" class="border text-red-400 text-sm font-medium px-4 py-2.5 rounded-xl transition" style="border-color:rgba(239,68,68,0.3);background:rgba(239,68,68,0.05)">✕ Clear All Data</button>
     `,'p-5')}
   `;
 }
@@ -1609,70 +1642,8 @@ function delRep(name){
   setCfg(c); toast(`Removed ${name}`); go('settings');
 }
 
-// ═══════════════════════════════════════════════════
-//  SAMPLE DATA
-// ═══════════════════════════════════════════════════
-function loadSampleData(force=false){
-  if(!force && ls.get('_sample_loaded',false)) return;
-  if(!force && (accs().length>0||opps().length>0||cols().length>0)) return;
-  ls.set('cfg',{am_pct:6,csm_pct:4,am_upsell_pct:10,csm_upsell_pct:7,reps:[
-    {name:'Rahul Sharma',type:'AM'},{name:'Priya Patel',type:'AM'},{name:'Neha Gupta',type:'AM'},
-    {name:'Amit Singh',type:'CSM'},{name:'Sara Mehta',type:'CSM'},{name:'Vikram Nair',type:'CSM'},
-  ]});
-  ls.set('accs',[
-    {id:1,account_name:'Reliance Jio',am_name:'Rahul Sharma',csm_name:'Amit Singh',arr:4800000,product:'Enterprise Suite',renewal_date:'2026-04-30',account_tier:'Enterprise',health_score:'Green',churn_risk:'Low',notes:'Strategic flagship account'},
-    {id:2,account_name:'Infosys Ltd',am_name:'Priya Patel',csm_name:'Sara Mehta',arr:3600000,product:'Analytics Pro',renewal_date:'2026-06-15',account_tier:'Enterprise',health_score:'Green',churn_risk:'Low',notes:'Strong NPS, upsell potential'},
-    {id:3,account_name:'Zomato India',am_name:'Rahul Sharma',csm_name:'Vikram Nair',arr:1800000,product:'Growth Plan',renewal_date:'2026-03-20',account_tier:'Mid-Market',health_score:'Yellow',churn_risk:'Medium',notes:'Renewal at risk — budget cuts'},
-    {id:4,account_name:'TCS',am_name:'Neha Gupta',csm_name:'Amit Singh',arr:6000000,product:'Enterprise Suite',renewal_date:'2026-09-30',account_tier:'Enterprise',health_score:'Green',churn_risk:'Low',notes:'Multi-year deal, very stable'},
-    {id:5,account_name:'Flipkart',am_name:'Priya Patel',csm_name:'Sara Mehta',arr:2400000,product:'Analytics Pro',renewal_date:'2026-04-15',account_tier:'Mid-Market',health_score:'Yellow',churn_risk:'Medium',notes:'New stakeholders, QBR pending'},
-    {id:6,account_name:'Swiggy',am_name:'Neha Gupta',csm_name:'Vikram Nair',arr:1200000,product:'Starter',renewal_date:'2026-02-15',account_tier:'SMB',health_score:'Red',churn_risk:'High',notes:'Churned — contract expired'},
-    {id:7,account_name:'PayTM',am_name:'Rahul Sharma',csm_name:'Amit Singh',arr:3000000,product:'Growth Plan',renewal_date:'2026-05-31',account_tier:'Mid-Market',health_score:'Green',churn_risk:'Low',notes:'Expanding to new geographies'},
-    {id:8,account_name:"Byju's",am_name:'Priya Patel',csm_name:'Vikram Nair',arr:800000,product:'Starter',renewal_date:'2026-03-10',account_tier:'SMB',health_score:'Red',churn_risk:'High',notes:'Payment delays, leadership changes'},
-    {id:9,account_name:'HDFC Bank',am_name:'Neha Gupta',csm_name:'Sara Mehta',arr:5400000,product:'Enterprise Suite',renewal_date:'2026-07-31',account_tier:'Enterprise',health_score:'Green',churn_risk:'Low',notes:'Compliance module — hot upsell'},
-    {id:10,account_name:'Meesho',am_name:'Rahul Sharma',csm_name:'Vikram Nair',arr:1500000,product:'Growth Plan',renewal_date:'2026-03-25',account_tier:'SMB',health_score:'Yellow',churn_risk:'Medium',notes:'Seasonal usage spikes in Q4'},
-  ]);
-  ls.set('opps',[
-    {id:1, opportunity_name:'Reliance Jio — Enterprise Expansion',client_name:'Reliance Jio',rep_name:'Rahul Sharma',rep_type:'AM',value:1800000,close_month:'November',close_year:2025,quarter:'Q3',fy:'FY2025-26',status:'Won',          deal_type:'Upsell/Cross-sell'},
-    {id:2, opportunity_name:'Infosys — Analytics Upsell',         client_name:'Infosys Ltd',  rep_name:'Priya Patel', rep_type:'AM',value:1200000,close_month:'September',close_year:2025,quarter:'Q2',fy:'FY2025-26',status:'Won',          deal_type:'Upsell/Cross-sell'},
-    {id:3, opportunity_name:'TCS — Platform License Renewal',     client_name:'TCS',          rep_name:'Neha Gupta',  rep_type:'AM',value:2400000,close_month:'January', close_year:2026,quarter:'Q4',fy:'FY2025-26',status:'Commit',        deal_type:'Regular'},
-    {id:4, opportunity_name:'HDFC Bank — Compliance Module',      client_name:'HDFC Bank',    rep_name:'Neha Gupta',  rep_type:'AM',value:900000, close_month:'March',    close_year:2026,quarter:'Q4',fy:'FY2025-26',status:'Commit',        deal_type:'Upsell/Cross-sell'},
-    {id:5, opportunity_name:'Flipkart — Data Warehouse Add-on',   client_name:'Flipkart',     rep_name:'Priya Patel', rep_type:'AM',value:1500000,close_month:'February', close_year:2026,quarter:'Q4',fy:'FY2025-26',status:'Best Case',     deal_type:'Upsell/Cross-sell'},
-    {id:6, opportunity_name:'Zomato — Cloud Upgrade',             client_name:'Zomato India', rep_name:'Rahul Sharma',rep_type:'AM',value:600000, close_month:'August',   close_year:2025,quarter:'Q2',fy:'FY2025-26',status:'Lost',          deal_type:'Upsell/Cross-sell'},
-    {id:7, opportunity_name:'PayTM — Security Suite',             client_name:'PayTM',        rep_name:'Rahul Sharma',rep_type:'AM',value:1000000,close_month:'March',    close_year:2026,quarter:'Q4',fy:'FY2025-26',status:'Open',          deal_type:'Upsell/Cross-sell'},
-    {id:8, opportunity_name:'Meesho — Analytics Starter',         client_name:'Meesho',       rep_name:'Rahul Sharma',rep_type:'AM',value:500000, close_month:'March',    close_year:2026,quarter:'Q4',fy:'FY2025-26',status:'Open',          deal_type:'Regular'},
-    {id:9, opportunity_name:'Swiggy — Contract Renewal',          client_name:'Swiggy',       rep_name:'Neha Gupta',  rep_type:'AM',value:1200000,close_month:'January', close_year:2026,quarter:'Q4',fy:'FY2025-26',status:'Lost',          deal_type:'Regular'},
-    {id:10,opportunity_name:"Byju's — Renewal",                   client_name:"Byju's",       rep_name:'Priya Patel', rep_type:'AM',value:800000, close_month:'December', close_year:2025,quarter:'Q3',fy:'FY2025-26',status:'Lost',          deal_type:'Regular'},
-    {id:11,opportunity_name:'HDFC Bank — AI Analytics Module',    client_name:'HDFC Bank',    rep_name:'Neha Gupta',  rep_type:'AM',value:2000000,close_month:'March',    close_year:2026,quarter:'Q4',fy:'FY2025-26',status:'Best Case',     deal_type:'Upsell/Cross-sell'},
-    {id:12,opportunity_name:'Infosys — Premium Support Pack',     client_name:'Infosys Ltd',  rep_name:'Priya Patel', rep_type:'AM',value:600000, close_month:'June',     close_year:2025,quarter:'Q1',fy:'FY2025-26',status:'Won',          deal_type:'Upsell/Cross-sell'},
-  ]);
-  const C=[
-    {rep_name:'Rahul Sharma',rep_type:'AM', customer_name:'Reliance Jio',  regular_amount:800000,  upsell_amount:0,       month:'October',  year:2025},
-    {rep_name:'Rahul Sharma',rep_type:'AM', customer_name:'PayTM',          regular_amount:0,        upsell_amount:1200000, month:'November', year:2025},
-    {rep_name:'Rahul Sharma',rep_type:'AM', customer_name:'Meesho',         regular_amount:600000,  upsell_amount:0,       month:'December', year:2025},
-    {rep_name:'Rahul Sharma',rep_type:'AM', customer_name:'Zomato India',   regular_amount:500000,  upsell_amount:0,       month:'January',  year:2026},
-    {rep_name:'Rahul Sharma',rep_type:'AM', customer_name:'Reliance Jio',  regular_amount:0,        upsell_amount:700000,  month:'February', year:2026},
-    {rep_name:'Priya Patel', rep_type:'AM', customer_name:'Infosys Ltd',    regular_amount:700000,  upsell_amount:0,       month:'September',year:2025},
-    {rep_name:'Priya Patel', rep_type:'AM', customer_name:'Flipkart',       regular_amount:0,        upsell_amount:900000,  month:'November', year:2025},
-    {rep_name:'Priya Patel', rep_type:'AM', customer_name:"Byju's",         regular_amount:600000,  upsell_amount:0,       month:'December', year:2025},
-    {rep_name:'Priya Patel', rep_type:'AM', customer_name:'Infosys Ltd',    regular_amount:0,        upsell_amount:800000,  month:'January',  year:2026},
-    {rep_name:'Priya Patel', rep_type:'AM', customer_name:'Flipkart',       regular_amount:600000,  upsell_amount:0,       month:'February', year:2026},
-    {rep_name:'Neha Gupta',  rep_type:'AM', customer_name:'TCS',            regular_amount:1400000, upsell_amount:0,       month:'November', year:2025},
-    {rep_name:'Neha Gupta',  rep_type:'AM', customer_name:'HDFC Bank',      regular_amount:0,        upsell_amount:1000000, month:'January',  year:2026},
-    {rep_name:'Neha Gupta',  rep_type:'AM', customer_name:'TCS',            regular_amount:800000,  upsell_amount:0,       month:'February', year:2026},
-    {rep_name:'Amit Singh',  rep_type:'CSM',customer_name:'Reliance Jio',  regular_amount:500000,  upsell_amount:0,       month:'October',  year:2025},
-    {rep_name:'Amit Singh',  rep_type:'CSM',customer_name:'TCS',            regular_amount:0,        upsell_amount:400000,  month:'December', year:2025},
-    {rep_name:'Sara Mehta',  rep_type:'CSM',customer_name:'Infosys Ltd',    regular_amount:600000,  upsell_amount:0,       month:'November', year:2025},
-    {rep_name:'Sara Mehta',  rep_type:'CSM',customer_name:'HDFC Bank',      regular_amount:0,        upsell_amount:500000,  month:'February', year:2026},
-    {rep_name:'Vikram Nair', rep_type:'CSM',customer_name:'Zomato India',   regular_amount:0,        upsell_amount:450000,  month:'January',  year:2026},
-    {rep_name:'Vikram Nair', rep_type:'CSM',customer_name:'Meesho',         regular_amount:350000,  upsell_amount:0,       month:'February', year:2026},
-  ];
-  C.forEach((c,i)=>c.id=i+1);
-  ls.set('cols',C);
-  ls.set('_sample_loaded',true);
-  toast('Sample data loaded!');
-}
 function clearAllData(){
-  ['opps','cols','accs','cfg','_sample_loaded'].forEach(k=>localStorage.removeItem(k));
+  ['opps','cols','accs','cfg'].forEach(k=>localStorage.removeItem(k));
   toast('All data cleared'); go('settings');
 }
 
@@ -1688,7 +1659,6 @@ function toast(msg){
 // ═══════════════════════════════════════════════════
 //  BOOT
 // ═══════════════════════════════════════════════════
-loadSampleData();
 go('dashboard');
 </script>
 </body>
