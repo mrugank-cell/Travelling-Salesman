@@ -189,6 +189,16 @@ const ST_COLOR = { Open:'#3b82f6', Commit:'#8b5cf6', 'Best Case':'#f59e0b', Won:
 const MC_THEMES = ['mc-blue','mc-green','mc-violet','mc-amber','mc-rose','mc-cyan'];
 const ACCENTS   = ['chart-accent-blue','chart-accent-green','chart-accent-violet','chart-accent-amber','chart-accent-rose','chart-accent-cyan'];
 
+const COL_CSV_FIELDS = [
+  { key:'customer_name', label:'Customer Name',    required:true,  aliases:['customer','client','account','company','customer name','customer_name'] },
+  { key:'rep_name',      label:'Rep Name',         required:true,  aliases:['rep','rep name','salesperson','account manager','am','csm','rep_name','assigned to','assigned rep'] },
+  { key:'regular',       label:'Regular Amount',   required:false, aliases:['regular','regular amount','standard','base','base amount','regular_amount'] },
+  { key:'upsell',        label:'Upsell/X-sell Amt',required:false, aliases:['upsell','upsell amount','cross sell','crosssell','upsell/crosssell','upsell/cross-sell','upsell_amount','cross-sell'] },
+  { key:'invoice_amt',   label:'Invoice Amount',   required:false, aliases:['invoice','invoice amount','amount','total','total amount','invoice_amount'] },
+  { key:'month',         label:'Month',            required:false, aliases:['month','billing month','collection month'] },
+  { key:'year',          label:'Year',             required:false, aliases:['year','billing year'] },
+];
+
 const ACC_FIELDS = [
   { key:'account_name', label:'Account Name', required:true,  aliases:['account name','account','company','client','customer','organisation','organization'] },
   { key:'am_name',      label:'AM Name',       required:true,  aliases:['am','am name','account manager','account_manager','ae','account executive'] },
@@ -259,6 +269,7 @@ let page='dashboard', charts={};
 let oppMode='list', colMode='list', accMode='list';
 let editId=null, accEditId=null;
 let csvParsed=null, csvMapping={};
+let colCsvParsed=null, colCsvMapping={};
 
 function go(p, filter=null){
   if(filter) window._pageFilter=filter;
@@ -1122,85 +1133,273 @@ function saveOpp(eid){
 // ═══════════════════════════════════════════════════
 function collections(){
   document.getElementById('app').innerHTML=`
-    ${pageHeader('Collections','Record actual money collected',
-      `<button onclick="colMode='add';render()" class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold px-4 py-2 rounded-xl shadow shadow-indigo-200">+ Record</button>`
+    ${pageHeader('Collections','Invoice-level collection records',`
+      <div class="flex gap-2 flex-wrap">
+        <button onclick="downloadColTemplate()" class="border text-slate-400 hover:bg-white/5 text-sm font-medium px-3 py-2 rounded-xl transition" style="border-color:rgba(255,255,255,0.1)">↓ Template</button>
+        <button onclick="colMode='import';render()" class="border text-indigo-400 text-sm font-medium px-3 py-2 rounded-xl transition hover:bg-indigo-500/10" style="border-color:rgba(99,102,241,0.35)">↑ Import CSV</button>
+        <button onclick="colMode='add';render()" class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold px-4 py-2 rounded-xl shadow shadow-indigo-900/40">+ Add Entry</button>
+      </div>`
     )}
     <div id="col-body"></div>
   `;
-  if(colMode==='add') renderColForm();
+  if(colMode==='import') renderColImport();
+  else if(colMode==='add') renderColForm();
   else renderColList();
 }
+
 function renderColList(){
   const all=cols(), years=[...new Set(all.map(c=>c.year))].sort((a,b)=>b-a);
+  const repsInData=[...new Set(all.map(c=>c.rep_name).filter(Boolean))].sort();
+  const totReg=all.reduce((s,c)=>s+(c.regular_amount??c.amount??0),0);
+  const totUps=all.reduce((s,c)=>s+(c.upsell_amount??0),0);
   document.getElementById('col-body').innerHTML=`
+    <div class="grid grid-cols-4 gap-4 mb-5">
+      ${mc('Total Entries',all.length,'Invoices uploaded',0)}
+      ${mc('Regular Collected',inr(totReg),'',1)}
+      ${mc('Upsell Collected',inr(totUps),'',3)}
+      ${mc('Grand Total',inr(totReg+totUps),'All collections',2)}
+    </div>
     <div class="flex flex-wrap gap-2 mb-4">
+      ${sel('cf-rep',[{v:'',l:'All Reps'},...repsInData.map(r=>({v:r,l:r}))], '', 'w-auto')}
       ${sel('cf-yr',[{v:'',l:'All Years'},...years.map(y=>({v:y,l:y}))], '', 'w-auto')}
       ${sel('cf-mo',[{v:'',l:'All Months'},...MONTHS.map(m=>({v:m,l:m}))], '', 'w-auto')}
-      ${sel('cf-ty',[{v:'',l:'All Types'},{v:'AM',l:'AM'},{v:'CSM',l:'CSM'}], '', 'w-auto')}
     </div>
     <div id="col-tbl"></div>
   `;
-  ['cf-yr','cf-mo','cf-ty'].forEach(id=>document.getElementById(id).onchange=filterCols);
+  ['cf-rep','cf-yr','cf-mo'].forEach(id=>document.getElementById(id).onchange=filterCols);
   filterCols();
 }
+
 function filterCols(){
-  const yr=document.getElementById('cf-yr').value, mo=document.getElementById('cf-mo').value, ty=document.getElementById('cf-ty').value;
+  const rep=document.getElementById('cf-rep').value;
+  const yr=document.getElementById('cf-yr').value;
+  const mo=document.getElementById('cf-mo').value;
   let data=cols();
-  if(yr) data=data.filter(c=>String(c.year)===String(yr));
-  if(mo) data=data.filter(c=>c.month===mo);
-  if(ty) data=data.filter(c=>c.rep_type===ty);
-  const total=data.reduce((s,c)=>s+c.amount,0);
+  if(rep) data=data.filter(c=>c.rep_name===rep);
+  if(yr)  data=data.filter(c=>String(c.year)===String(yr));
+  if(mo)  data=data.filter(c=>c.month===mo);
+  const totReg=data.reduce((s,c)=>s+(c.regular_amount??c.amount??0),0);
+  const totUps=data.reduce((s,c)=>s+(c.upsell_amount??0),0);
   document.getElementById('col-tbl').innerHTML=data.length===0
-    ? card(emptyState('No collections recorded yet.'),'p-4')
+    ? card(emptyState('No collections found. Import a CSV or add entries manually.'),'p-4')
     : `<div class="card overflow-hidden">
-      <table class="w-full text-sm dt">
-        <thead class="bg-slate-50 border-b border-slate-100">${thRow(['Rep','Type','Deal Type','Month','Year','Amount',''])}</thead>
+      <div class="overflow-x-auto">
+      <table class="w-full text-sm dt min-w-[760px]">
+        <thead class="bg-slate-50 border-b border-slate-100">${thRow(['Customer','Rep','Regular Amt','Upsell Amt','Invoice Total','Period',''])}</thead>
         <tbody class="divide-y divide-slate-50">
-          ${data.map(c=>`<tr>
-            <td class="px-4 py-3 font-semibold text-slate-800">${c.rep_name}</td>
-            <td class="px-4 py-3">${typeBadge(c.rep_type)}</td>
-            <td class="px-4 py-3">${dealTypeBadge(c.deal_type||'Regular')}</td>
-            <td class="px-4 py-3 text-slate-500">${c.month}</td>
-            <td class="px-4 py-3 text-slate-500">${c.year}</td>
-            <td class="px-4 py-3 font-bold text-slate-800">${inr(c.amount)}</td>
-            <td class="px-4 py-3"><button onclick="delCol(${c.id})" class="text-red-400 hover:underline text-xs">Del</button></td>
-          </tr>`).join('')}
+          ${data.map(c=>{
+            const reg=c.regular_amount??c.amount??0;
+            const ups=c.upsell_amount??0;
+            return `<tr>
+              <td class="px-4 py-3 font-semibold text-slate-800">${c.customer_name||'—'}</td>
+              <td class="px-4 py-3 text-slate-500 text-xs">${c.rep_name} ${typeBadge(c.rep_type)}</td>
+              <td class="px-4 py-3">${reg>0?`<span class="font-semibold" style="color:#6ee7b7">${inr(reg)}</span>`:'<span class="text-slate-500 text-xs">—</span>'}</td>
+              <td class="px-4 py-3">${ups>0?`<span class="font-semibold" style="color:#fcd34d">${inr(ups)}</span>`:'<span class="text-slate-500 text-xs">—</span>'}</td>
+              <td class="px-4 py-3 font-bold text-slate-800">${inr(reg+ups)}</td>
+              <td class="px-4 py-3 text-slate-500 text-xs">${c.month} ${c.year}</td>
+              <td class="px-4 py-3"><button onclick="delCol(${c.id})" class="text-red-400 hover:underline text-xs">Del</button></td>
+            </tr>`;
+          }).join('')}
         </tbody>
         <tfoot class="bg-slate-50 border-t border-slate-100"><tr>
-          <td colspan="5" class="px-4 py-3 text-xs text-slate-400">${data.length} entr${data.length!==1?'ies':'y'}</td>
-          <td class="px-4 py-3 font-bold">${inr(total)}</td><td></td>
+          <td colspan="2" class="px-4 py-3 text-xs text-slate-400">${data.length} entr${data.length!==1?'ies':'y'}</td>
+          <td class="px-4 py-3 font-bold" style="color:#6ee7b7">${inr(totReg)}</td>
+          <td class="px-4 py-3 font-bold" style="color:#fcd34d">${inr(totUps)}</td>
+          <td class="px-4 py-3 font-bold text-slate-800">${inr(totReg+totUps)}</td>
+          <td colspan="2"></td>
         </tr></tfoot>
       </table>
+      </div>
     </div>`;
 }
+
 function delCol(id){if(!confirm('Delete?'))return; setCols(cols().filter(c=>c.id!==id)); toast('Deleted'); render();}
+
 function renderColForm(){
   const c=cfg(), reps=c.reps||[], now=new Date();
   document.getElementById('col-body').innerHTML=card(`
     <div class="flex items-center justify-between mb-5">
-      <h2 class="text-base font-bold text-slate-800">Record Collection</h2>
+      <h2 class="text-base font-bold text-slate-800">Add Collection Entry</h2>
       <button onclick="colMode='list';render()" class="text-xs text-slate-400 hover:text-slate-600">← Back</button>
     </div>
     ${reps.length===0?`<div class="bg-amber-50 border border-amber-200 text-amber-800 text-sm p-3 rounded-xl mb-4">⚠️ Add reps in <button onclick="go('settings')" class="underline font-medium">Settings</button> first.</div>`:''}
     <div class="space-y-4">
-      ${frow(lbl('Rep *')+sel('c-rep',reps.map(r=>({v:r.name,l:`${r.name} (${r.type})`})),''), lbl('Amount (₹) *')+inp('c-amt','number',''))}
+      ${frow(lbl('Rep *')+sel('c-rep',reps.map(r=>({v:r.name,l:`${r.name} (${r.type})`})),''), lbl('Customer Name *')+inp('c-cust','text','','','placeholder="e.g. Reliance Jio"'))}
+      ${frow(lbl('Regular Amount (₹)')+inp('c-reg','number','0','','min="0" placeholder="0"'), lbl('Upsell/Cross-sell Amount (₹)')+inp('c-ups','number','0','','min="0" placeholder="0"'))}
       ${frow(lbl('Month *')+sel('c-month',MONTHS.map(m=>({v:m,l:m})),MONTHS[now.getMonth()]), lbl('Year *')+inp('c-year','number',now.getFullYear()))}
-      ${frow(lbl('Deal Type *')+sel('c-dtype',DEAL_TYPES,'Regular'), '<div></div>')}
     </div>
-    <div class="flex gap-3 mt-6">
-      <button onclick="saveCol()" class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-5 py-2 rounded-xl text-sm font-semibold shadow shadow-indigo-200">Record</button>
-      <button onclick="colMode='list';render()" class="border border-slate-200 text-slate-600 hover:bg-slate-50 px-5 py-2 rounded-xl text-sm">Cancel</button>
+    <p class="text-xs text-slate-500 mt-3">Enter amounts for Regular, Upsell/Cross-sell, or both. Different incentive rates apply to each.</p>
+    <div class="flex gap-3 mt-4">
+      <button onclick="saveCol()" class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-5 py-2 rounded-xl text-sm font-semibold shadow shadow-indigo-900/40">Add Entry</button>
+      <button onclick="colMode='list';render()" class="border text-slate-400 hover:bg-white/5 px-5 py-2 rounded-xl text-sm transition" style="border-color:rgba(255,255,255,0.1)">Cancel</button>
     </div>
   `,'p-6');
 }
+
 function saveCol(){
-  const c=cfg(), repName=document.getElementById('c-rep').value, amt=parseFloat(document.getElementById('c-amt').value);
+  const c=cfg(), repName=document.getElementById('c-rep').value;
+  const cust=document.getElementById('c-cust').value.trim();
+  const reg=parseFloat(document.getElementById('c-reg').value)||0;
+  const ups=parseFloat(document.getElementById('c-ups').value)||0;
   const month=document.getElementById('c-month').value, yr=parseInt(document.getElementById('c-year').value);
-  const dealType=document.getElementById('c-dtype').value||'Regular';
-  if(!repName||isNaN(amt)||amt<=0){alert('Fill in all required fields.');return;}
+  if(!repName||!cust){alert('Rep and Customer Name are required.');return;}
+  if(reg<=0&&ups<=0){alert('Enter at least one amount (Regular or Upsell).');return;}
   const repType=(c.reps.find(r=>r.name===repName)||{}).type||'AM';
-  const data=cols(); data.push({id:uid(data),rep_name:repName,rep_type:repType,month,year:yr,amount:amt,deal_type:dealType});
-  setCols(data); colMode='list'; toast('Collection recorded'); go('collections');
+  const data=cols();
+  data.push({id:uid(data),rep_name:repName,rep_type:repType,customer_name:cust,regular_amount:reg,upsell_amount:ups,month,year:yr});
+  setCols(data); colMode='list'; toast('Collection added'); go('collections');
+}
+
+// ── Collections CSV Import ──
+function renderColImport(){
+  document.getElementById('col-body').innerHTML=card(`
+    <div class="flex items-center justify-between mb-5">
+      <h2 class="text-base font-bold text-slate-800">Import Collections from CSV</h2>
+      <button onclick="colMode='list';render()" class="text-xs text-slate-400 hover:text-slate-600">← Back</button>
+    </div>
+    <div id="col-csv-s1">
+      <div class="border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-all"
+           style="border-color:rgba(99,102,241,0.3)"
+           onclick="document.getElementById('col-csv-fi').click()"
+           ondragover="event.preventDefault();this.style.borderColor='#818cf8';this.style.background='rgba(99,102,241,0.08)'"
+           ondragleave="this.style.borderColor='rgba(99,102,241,0.3)';this.style.background=''"
+           ondrop="event.preventDefault();this.style.borderColor='rgba(99,102,241,0.3)';this.style.background='';handleColFileDrop(event)">
+        <div class="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl mx-auto mb-3" style="background:rgba(99,102,241,0.15)">📂</div>
+        <p class="text-sm font-semibold text-slate-700">Drop your CSV here or <span style="color:#818cf8">browse</span></p>
+        <p class="text-xs text-slate-500 mt-2">Required columns: <strong>Customer Name</strong> · <strong>Rep Name</strong> · <strong>Regular</strong> or <strong>Upsell</strong> amount</p>
+        <p class="text-xs text-slate-500 mt-1">Optional: Invoice Amount · Month · Year</p>
+      </div>
+      <input type="file" id="col-csv-fi" accept=".csv" class="hidden" onchange="handleColFileInput(this)"/>
+      <p class="text-xs text-slate-500 mt-4 text-center">
+        Need a template? <button onclick="downloadColTemplate()" style="color:#818cf8" class="hover:underline font-medium">Download sample CSV</button>
+      </p>
+    </div>
+    <div id="col-csv-s2" class="hidden"></div>
+  `,'p-6');
+}
+
+function handleColFileDrop(e){const f=e.dataTransfer.files[0]; if(f) processColCSVFile(f);}
+function handleColFileInput(i){if(i.files[0]) processColCSVFile(i.files[0]);}
+function processColCSVFile(file){
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const parsed=parseCSV(e.target.result);
+    if(!parsed.headers.length){toast('Could not parse CSV.');return;}
+    colCsvParsed=parsed; colCsvMapping=autoMapColCols(parsed.headers);
+    renderColMappingUI(file.name,parsed);
+  };
+  reader.readAsText(file);
+}
+function autoMapColCols(headers){
+  const norm=h=>h.toLowerCase().replace(/[^a-z0-9]/g,' ').trim();
+  const m={};
+  COL_CSV_FIELDS.forEach(f=>{
+    const found=headers.find(h=>f.aliases.some(a=>norm(h)===a||norm(h).includes(a)));
+    m[f.key]=found||'';
+  });
+  return m;
+}
+function renderColMappingUI(fname,parsed){
+  document.getElementById('col-csv-s1').classList.add('hidden');
+  const s2=document.getElementById('col-csv-s2'); s2.classList.remove('hidden');
+  const colOpts=[{v:'',l:'— skip —'},...parsed.headers.map(h=>({v:h,l:h}))];
+  const prev=parsed.rows.slice(0,3);
+  const now=new Date();
+  s2.innerHTML=`
+    <div class="rounded-xl px-4 py-3 mb-5 flex items-center gap-3" style="background:rgba(99,102,241,0.10);border:1px solid rgba(99,102,241,0.25)">
+      <span class="text-xl">✅</span>
+      <div>
+        <p class="text-sm font-semibold" style="color:#a5b4fc">${fname} — ${parsed.rows.length} rows detected</p>
+        <p class="text-xs" style="color:#818cf8">Map your columns below, then click Import.</p>
+      </div>
+    </div>
+    <div class="grid grid-cols-2 gap-5 mb-5">
+      <div>
+        <p class="text-sm font-semibold text-slate-700 mb-3">Column Mapping</p>
+        <table class="w-full text-sm rounded-xl overflow-hidden" style="border:1px solid rgba(255,255,255,0.08)">
+          <thead style="background:#1a2035"><tr>
+            <th class="text-left px-3 py-2 text-xs font-semibold text-slate-500">Field</th>
+            <th class="text-left px-3 py-2 text-xs font-semibold text-slate-500">CSV Column</th>
+          </tr></thead>
+          <tbody>
+            ${COL_CSV_FIELDS.map(f=>`<tr style="border-top:1px solid rgba(255,255,255,0.05)" class="${f.required?'':'opacity-70'}">
+              <td class="px-3 py-2 text-xs font-medium text-slate-700">${f.label}${f.required?' <span class="text-red-400">*</span>':''}</td>
+              <td class="px-3 py-2">${sel('cmap-'+f.key,colOpts,colCsvMapping[f.key]||'','text-xs py-1 w-full')}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+        <div class="mt-4 p-3 rounded-xl" style="background:rgba(245,158,11,0.07);border:1px solid rgba(245,158,11,0.2)">
+          <p class="text-xs font-semibold text-slate-500 mb-2">Default period for rows missing month/year</p>
+          <div class="flex gap-2">
+            ${sel('cmap-def-mo',MONTHS.map(m=>({v:m,l:m})),MONTHS[now.getMonth()],'text-xs py-1 flex-1')}
+            ${inp('cmap-def-yr','number',now.getFullYear(),'flex-1','style="padding:6px 10px"')}
+          </div>
+        </div>
+      </div>
+      <div>
+        <p class="text-sm font-semibold text-slate-700 mb-3">Preview (first 3 rows)</p>
+        <div class="overflow-x-auto rounded-xl" style="border:1px solid rgba(255,255,255,0.07)">
+          <table class="text-xs w-full">
+            <thead style="background:#1a2035"><tr>${parsed.headers.map(h=>`<th class="px-2 py-2 text-left font-medium text-slate-500 whitespace-nowrap">${h}</th>`).join('')}</tr></thead>
+            <tbody>${prev.map(r=>`<tr style="border-top:1px solid rgba(255,255,255,0.05)">${parsed.headers.map(h=>`<td class="px-2 py-1.5 text-slate-600 whitespace-nowrap">${r[h]||''}</td>`).join('')}</tr>`).join('')}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="flex gap-3">
+      <button onclick="executeColImport()" class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-2 rounded-xl text-sm font-semibold shadow shadow-indigo-900/40">Import ${parsed.rows.length} Entries</button>
+      <button onclick="colMode='import';render()" class="border text-slate-400 hover:bg-white/5 px-5 py-2 rounded-xl text-sm" style="border-color:rgba(255,255,255,0.1)">← Re-upload</button>
+      <button onclick="colMode='list';render()" class="text-slate-500 hover:text-slate-400 text-sm px-4 py-2">Cancel</button>
+    </div>`;
+}
+function executeColImport(){
+  const mapping={};
+  COL_CSV_FIELDS.forEach(f=>{const el=document.getElementById('cmap-'+f.key);if(el)mapping[f.key]=el.value;});
+  if(!mapping.customer_name){alert('Map Customer Name column.');return;}
+  if(!mapping.rep_name){alert('Map Rep Name — needed to calculate incentives.');return;}
+  const defMo=document.getElementById('cmap-def-mo').value;
+  const defYr=parseInt(document.getElementById('cmap-def-yr').value)||new Date().getFullYear();
+  const c=cfg(), repsReg=c.reps||[];
+  const existing=cols(); let added=0;
+  const imported=colCsvParsed.rows.map(row=>{
+    const cust=mapping.customer_name?(row[mapping.customer_name]||'').trim():'';
+    if(!cust) return null;
+    const repName=mapping.rep_name?(row[mapping.rep_name]||'').trim():'';
+    const repType=(repsReg.find(r=>r.name===repName)||{}).type||'AM';
+    const invAmt=parseFloat((mapping.invoice_amt?row[mapping.invoice_amt]:'')||'0')||0;
+    let reg=parseFloat((mapping.regular?row[mapping.regular]:'')||'0')||0;
+    let ups=parseFloat((mapping.upsell?row[mapping.upsell]:'')||'0')||0;
+    if(!mapping.regular&&!mapping.upsell&&invAmt>0){reg=invAmt;ups=0;}
+    const rawMonth=mapping.month?(row[mapping.month]||''):'';
+    const month=parseMonthStr(rawMonth)||defMo;
+    const rawYear=mapping.year?(row[mapping.year]||''):'';
+    const year=parseInt(rawYear)||defYr;
+    added++;
+    return{customer_name:cust,rep_name:repName,rep_type:repType,regular_amount:reg,upsell_amount:ups,month,year};
+  }).filter(Boolean);
+  const maxId=existing.length?Math.max(...existing.map(a=>a.id)):0;
+  imported.forEach((r,i)=>{r.id=maxId+i+1;});
+  setCols([...existing,...imported]);
+  colCsvParsed=null; colCsvMapping={};
+  toast(`Imported ${added} collection entries`); colMode='list'; go('collections');
+}
+function parseMonthStr(s){
+  if(!s)return null; const t=s.trim();
+  const idx=MONTHS.findIndex(m=>m.toLowerCase()===t.toLowerCase()||m.slice(0,3).toLowerCase()===t.slice(0,3).toLowerCase());
+  if(idx>=0)return MONTHS[idx];
+  const n=parseInt(t); if(n>=1&&n<=12)return MONTHS[n-1];
+  return null;
+}
+function downloadColTemplate(){
+  const h=['Customer Name','Rep Name','Invoice Amount','Regular','Upsell/Cross-sell','Month','Year'];
+  const r=[
+    ['Reliance Jio','Rahul Sharma','1200000','800000','400000','November','2025'],
+    ['Infosys Ltd','Priya Patel','600000','600000','0','September','2025'],
+    ['TCS','Neha Gupta','1400000','0','1400000','November','2025'],
+    ['Flipkart','Priya Patel','900000','500000','400000','January','2026'],
+  ];
+  const csv=[h,...r].map(row=>row.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download='collections_template.csv'; a.click();
 }
 
 // ═══════════════════════════════════════════════════
@@ -1208,19 +1407,38 @@ function saveCol(){
 // ═══════════════════════════════════════════════════
 function incentives(){
   const yrs=[...new Set(cols().map(c=>c.year))].sort((a,b)=>b-a);
+  const c=cfg();
   document.getElementById('app').innerHTML=`
-    ${pageHeader('Incentive Calculator','Collections × incentive rate by deal type')}
-    <div class="flex flex-wrap gap-2 mb-5">
-      ${sel('i-yr',[{v:'',l:'All Years'},...yrs.map(y=>({v:y,l:y}))], '', 'w-auto')}
-      ${sel('i-mo',[{v:'',l:'All Months'},...MONTHS.map(m=>({v:m,l:m}))], '', 'w-auto')}
-      ${sel('i-ty',[{v:'',l:'All Types'},{v:'AM',l:'AM'},{v:'CSM',l:'CSM'}], '', 'w-auto')}
-      ${sel('i-dt',[{v:'',l:'All Deal Types'},...DEAL_TYPES.map(d=>({v:d,l:d}))], '', 'w-auto')}
+    ${pageHeader('Incentive Calculator','Calculated from collections — Regular & Upsell/Cross-sell')}
+    <div class="card p-4 mb-5">
+      <div class="flex flex-wrap items-center gap-4">
+        <div class="flex items-center gap-3">
+          <div class="w-2 h-8 rounded-full" style="background:linear-gradient(180deg,#6366f1,#818cf8)"></div>
+          <div>
+            <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Regular Rate</p>
+            <p class="text-sm font-bold text-slate-700">AM: ${c.am_pct||5}% &nbsp;·&nbsp; CSM: ${c.csm_pct||3}%</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-3">
+          <div class="w-2 h-8 rounded-full" style="background:linear-gradient(180deg,#f59e0b,#fcd34d)"></div>
+          <div>
+            <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Upsell / Cross-sell Rate</p>
+            <p class="text-sm font-bold text-slate-700">AM: ${c.am_upsell_pct||8}% &nbsp;·&nbsp; CSM: ${c.csm_upsell_pct||6}%</p>
+          </div>
+        </div>
+        <button onclick="go('settings')" class="ml-auto text-xs text-indigo-400 hover:underline border rounded-lg px-3 py-1.5" style="border-color:rgba(99,102,241,0.3)">✎ Edit Rates</button>
+        <div class="flex flex-wrap gap-2">
+          ${sel('i-yr',[{v:'',l:'All Years'},...yrs.map(y=>({v:y,l:y}))], '', 'w-auto')}
+          ${sel('i-mo',[{v:'',l:'All Months'},...MONTHS.map(m=>({v:m,l:m}))], '', 'w-auto')}
+          ${sel('i-ty',[{v:'',l:'All Types'},{v:'AM',l:'AM'},{v:'CSM',l:'CSM'}], '', 'w-auto')}
+        </div>
+      </div>
     </div>
     <div id="i-metrics" class="grid grid-cols-4 gap-4 mb-5"></div>
     <div id="i-table" class="mb-5"></div>
-    ${chartCard('Incentive Breakdown by Rep','ch-i',150,1)}
+    ${chartCard('Incentive by Rep — Regular (indigo) vs Upsell (amber)','ch-i',160,1)}
   `;
-  ['i-yr','i-mo','i-ty','i-dt'].forEach(id=>document.getElementById(id).onchange=calcIncentives);
+  ['i-yr','i-mo','i-ty'].forEach(id=>document.getElementById(id).onchange=calcIncentives);
   calcIncentives();
 }
 function calcIncentives(){
@@ -1228,75 +1446,86 @@ function calcIncentives(){
   const amPct=c.am_pct||5, csmPct=c.csm_pct||3;
   const amUp=c.am_upsell_pct||8, csmUp=c.csm_upsell_pct||6;
   const reps=c.reps||[];
-  const selYr=document.getElementById('i-yr').value, selMo=document.getElementById('i-mo').value;
-  const selTy=document.getElementById('i-ty').value, selDt=document.getElementById('i-dt').value;
+  const selYr=document.getElementById('i-yr').value;
+  const selMo=document.getElementById('i-mo').value;
+  const selTy=document.getElementById('i-ty').value;
   let data=cols();
   if(selYr) data=data.filter(x=>String(x.year)===String(selYr));
   if(selMo) data=data.filter(x=>x.month===selMo);
   if(selTy) data=data.filter(x=>x.rep_type===selTy);
-  if(selDt) data=data.filter(x=>(x.deal_type||'Regular')===selDt);
 
-  // Group by rep + deal type
-  const rdMap={};
+  // Aggregate regular_amount + upsell_amount per rep (supports both old and new data formats)
+  const repMap={};
   data.forEach(x=>{
-    const key=x.rep_name+'||'+(x.deal_type||'Regular');
-    if(!rdMap[key]) rdMap[key]={name:x.rep_name,type:x.rep_type,deal_type:x.deal_type||'Regular',total:0};
-    rdMap[key].total+=x.amount;
+    if(!repMap[x.rep_name]) repMap[x.rep_name]={type:x.rep_type,reg:0,ups:0};
+    if(x.regular_amount!==undefined){
+      repMap[x.rep_name].reg+=x.regular_amount||0;
+      repMap[x.rep_name].ups+=x.upsell_amount||0;
+    } else {
+      // Legacy format: amount + deal_type
+      if((x.deal_type||'Regular')==='Upsell/Cross-sell') repMap[x.rep_name].ups+=x.amount||0;
+      else repMap[x.rep_name].reg+=x.amount||0;
+    }
   });
-  const rows=Object.values(rdMap).map(({name,type,deal_type,total})=>{
-    const custom=(reps.find(r=>r.name===name)||{}).custom_pct;
-    let rate;
-    if(custom!==undefined) rate=custom;
-    else if(deal_type==='Upsell/Cross-sell') rate=type==='AM'?amUp:csmUp;
-    else rate=type==='AM'?amPct:csmPct;
-    return{name,type,deal_type,total,rate,incentive:total*rate/100};
-  }).sort((a,b)=>a.name.localeCompare(b.name)||a.deal_type.localeCompare(b.deal_type));
 
-  const sumCol=rows.reduce((s,r)=>s+r.total,0);
-  const sumInc=rows.reduce((s,r)=>s+r.incentive,0);
-  const regInc=rows.filter(r=>r.deal_type==='Regular').reduce((s,r)=>s+r.incentive,0);
-  const upsellInc=rows.filter(r=>r.deal_type==='Upsell/Cross-sell').reduce((s,r)=>s+r.incentive,0);
+  const rows=Object.entries(repMap).map(([name,{type,reg,ups}])=>{
+    const custom=(reps.find(r=>r.name===name)||{}).custom_pct;
+    const rRate=custom!==undefined?custom:(type==='AM'?amPct:csmPct);
+    const uRate=custom!==undefined?custom:(type==='AM'?amUp:csmUp);
+    const regInc=reg*rRate/100, upsInc=ups*uRate/100;
+    return{name,type,reg,ups,rRate,uRate,regInc,upsInc,totalColl:reg+ups,totalInc:regInc+upsInc};
+  }).sort((a,b)=>b.totalInc-a.totalInc);
+
+  const sumReg=rows.reduce((s,r)=>s+r.reg,0);
+  const sumUps=rows.reduce((s,r)=>s+r.ups,0);
+  const sumRegInc=rows.reduce((s,r)=>s+r.regInc,0);
+  const sumUpsInc=rows.reduce((s,r)=>s+r.upsInc,0);
 
   document.getElementById('i-metrics').innerHTML=`
-    ${mc('Total Collections',inr(sumCol),'All deal types',1)}
-    ${mc('Total Incentive',inr(sumInc),'Combined payout',2)}
-    ${mc('Regular Incentive',inr(regInc),'AM '+amPct+'% · CSM '+csmPct+'%',0)}
-    ${mc('Upsell Incentive',inr(upsellInc),'AM '+amUp+'% · CSM '+csmUp+'%',3)}
+    ${mc('Regular Collected',inr(sumReg),'AM '+amPct+'% · CSM '+csmPct+'%',1)}
+    ${mc('Upsell Collected',inr(sumUps),'AM '+amUp+'% · CSM '+csmUp+'%',3)}
+    ${mc('Regular Incentive',inr(sumRegInc),'Earned on regular',0)}
+    ${mc('Upsell Incentive',inr(sumUpsInc),'Earned on upsells',2)}
   `;
 
   document.getElementById('i-table').innerHTML=rows.length===0
-    ? card(emptyState('No collections for this period.'),'p-4')
+    ? card(emptyState('No collections for this period. Import a CSV or add entries manually.'),'p-4')
     : `<div class="card overflow-hidden">
-      <table class="w-full text-sm dt">
-        <thead class="bg-slate-50 border-b border-slate-100">${thRow(['Rep','Type','Deal Type','Collections','Rate','Incentive'])}</thead>
+      <div class="overflow-x-auto">
+      <table class="w-full text-sm dt min-w-[900px]">
+        <thead class="bg-slate-50 border-b border-slate-100">${thRow(['Rep','Type','Regular Coll.','Rate','Regular Inc.','Upsell Coll.','Rate','Upsell Inc.','Total Incentive'])}</thead>
         <tbody class="divide-y divide-slate-50">
           ${rows.map(r=>`<tr>
             <td class="px-4 py-3 font-semibold text-slate-800">${r.name}</td>
             <td class="px-4 py-3">${typeBadge(r.type)}</td>
-            <td class="px-4 py-3">${dealTypeBadge(r.deal_type)}</td>
-            <td class="px-4 py-3">${inr(r.total)}</td>
-            <td class="px-4 py-3 text-slate-500">${r.rate}%${(c.reps.find(x=>x.name===r.name)||{}).custom_pct!==undefined?' <span class="text-xs text-violet-500">(custom)</span>':''}</td>
-            <td class="px-4 py-3 font-bold text-emerald-600">${inr(r.incentive)}</td>
+            <td class="px-4 py-3 text-slate-500">${r.reg>0?inr(r.reg):'—'}</td>
+            <td class="px-4 py-3 text-xs" style="color:#818cf8">${r.rRate}%</td>
+            <td class="px-4 py-3 font-semibold" style="color:#a5b4fc">${r.regInc>0?inr(r.regInc):'—'}</td>
+            <td class="px-4 py-3 text-slate-500">${r.ups>0?inr(r.ups):'—'}</td>
+            <td class="px-4 py-3 text-xs" style="color:#fbbf24">${r.uRate}%</td>
+            <td class="px-4 py-3 font-semibold" style="color:#fcd34d">${r.upsInc>0?inr(r.upsInc):'—'}</td>
+            <td class="px-4 py-3 font-bold text-emerald-600 text-base">${inr(r.totalInc)}</td>
           </tr>`).join('')}
         </tbody>
         <tfoot class="bg-slate-50 border-t border-slate-100"><tr>
-          <td colspan="3" class="px-4 py-3 text-xs text-slate-400">${rows.length} row${rows.length!==1?'s':''}</td>
-          <td class="px-4 py-3 font-bold">${inr(sumCol)}</td><td></td>
-          <td class="px-4 py-3 font-bold text-emerald-600">${inr(sumInc)}</td>
+          <td colspan="2" class="px-4 py-3 text-xs text-slate-400">${rows.length} rep${rows.length!==1?'s':''}</td>
+          <td class="px-4 py-3 font-bold text-slate-700">${inr(sumReg)}</td><td></td>
+          <td class="px-4 py-3 font-bold" style="color:#a5b4fc">${inr(sumRegInc)}</td>
+          <td class="px-4 py-3 font-bold text-slate-700">${inr(sumUps)}</td><td></td>
+          <td class="px-4 py-3 font-bold" style="color:#fcd34d">${inr(sumUpsInc)}</td>
+          <td class="px-4 py-3 font-bold text-emerald-600">${inr(sumRegInc+sumUpsInc)}</td>
         </tr></tfoot>
       </table>
+      </div>
     </div>`;
 
   if(charts.i){charts.i.destroy();delete charts.i;}
   if(rows.length>0){
-    const repNames=[...new Set(rows.map(r=>r.name))];
-    const regData=repNames.map(n=>rows.filter(r=>r.name===n&&r.deal_type==='Regular').reduce((s,r)=>s+r.incentive,0));
-    const upData=repNames.map(n=>rows.filter(r=>r.name===n&&r.deal_type==='Upsell/Cross-sell').reduce((s,r)=>s+r.incentive,0));
     charts.i=new Chart(document.getElementById('ch-i'),{
       type:'bar',
-      data:{labels:repNames,datasets:[
-        {label:'Regular Incentive',data:regData,backgroundColor:'#6366f1',borderRadius:5,borderSkipped:false},
-        {label:'Upsell/X-sell Incentive',data:upData,backgroundColor:'#f59e0b',borderRadius:5,borderSkipped:false},
+      data:{labels:rows.map(r=>r.name),datasets:[
+        {label:'Regular Incentive',data:rows.map(r=>r.regInc),backgroundColor:'#6366f1',borderRadius:5,borderSkipped:false},
+        {label:'Upsell Incentive',data:rows.map(r=>r.upsInc),backgroundColor:'#f59e0b',borderRadius:5,borderSkipped:false},
       ]},
       options:{responsive:true,plugins:{legend:{position:'bottom',labels:{boxWidth:10,padding:12,font:{size:11}}}},scales:{x:{grid:{display:false}},y:{ticks:{callback:compact},grid:{color:'rgba(255,255,255,0.06)'}}}},
     });
@@ -1417,25 +1646,25 @@ function loadSampleData(force=false){
     {id:12,opportunity_name:'Infosys — Premium Support Pack',     client_name:'Infosys Ltd',  rep_name:'Priya Patel', rep_type:'AM',value:600000, close_month:'June',     close_year:2025,quarter:'Q1',fy:'FY2025-26',status:'Won',          deal_type:'Upsell/Cross-sell'},
   ]);
   const C=[
-    {rep_name:'Rahul Sharma',rep_type:'AM', month:'October', year:2025,amount:800000,  deal_type:'Regular'},
-    {rep_name:'Rahul Sharma',rep_type:'AM', month:'November',year:2025,amount:1200000, deal_type:'Upsell/Cross-sell'},
-    {rep_name:'Rahul Sharma',rep_type:'AM', month:'December',year:2025,amount:600000,  deal_type:'Regular'},
-    {rep_name:'Rahul Sharma',rep_type:'AM', month:'January', year:2026,amount:500000,  deal_type:'Regular'},
-    {rep_name:'Rahul Sharma',rep_type:'AM', month:'February',year:2026,amount:700000,  deal_type:'Upsell/Cross-sell'},
-    {rep_name:'Priya Patel', rep_type:'AM', month:'September',year:2025,amount:700000, deal_type:'Regular'},
-    {rep_name:'Priya Patel', rep_type:'AM', month:'November',year:2025,amount:900000,  deal_type:'Upsell/Cross-sell'},
-    {rep_name:'Priya Patel', rep_type:'AM', month:'December',year:2025,amount:600000,  deal_type:'Regular'},
-    {rep_name:'Priya Patel', rep_type:'AM', month:'January', year:2026,amount:800000,  deal_type:'Upsell/Cross-sell'},
-    {rep_name:'Priya Patel', rep_type:'AM', month:'February',year:2026,amount:600000,  deal_type:'Regular'},
-    {rep_name:'Neha Gupta',  rep_type:'AM', month:'November',year:2025,amount:1400000, deal_type:'Regular'},
-    {rep_name:'Neha Gupta',  rep_type:'AM', month:'January', year:2026,amount:1000000, deal_type:'Upsell/Cross-sell'},
-    {rep_name:'Neha Gupta',  rep_type:'AM', month:'February',year:2026,amount:800000,  deal_type:'Regular'},
-    {rep_name:'Amit Singh',  rep_type:'CSM',month:'October', year:2025,amount:500000,  deal_type:'Regular'},
-    {rep_name:'Amit Singh',  rep_type:'CSM',month:'December',year:2025,amount:400000,  deal_type:'Upsell/Cross-sell'},
-    {rep_name:'Sara Mehta',  rep_type:'CSM',month:'November',year:2025,amount:600000,  deal_type:'Regular'},
-    {rep_name:'Sara Mehta',  rep_type:'CSM',month:'February',year:2026,amount:500000,  deal_type:'Upsell/Cross-sell'},
-    {rep_name:'Vikram Nair', rep_type:'CSM',month:'January', year:2026,amount:450000,  deal_type:'Upsell/Cross-sell'},
-    {rep_name:'Vikram Nair', rep_type:'CSM',month:'February',year:2026,amount:350000,  deal_type:'Regular'},
+    {rep_name:'Rahul Sharma',rep_type:'AM', customer_name:'Reliance Jio',  regular_amount:800000,  upsell_amount:0,       month:'October',  year:2025},
+    {rep_name:'Rahul Sharma',rep_type:'AM', customer_name:'PayTM',          regular_amount:0,        upsell_amount:1200000, month:'November', year:2025},
+    {rep_name:'Rahul Sharma',rep_type:'AM', customer_name:'Meesho',         regular_amount:600000,  upsell_amount:0,       month:'December', year:2025},
+    {rep_name:'Rahul Sharma',rep_type:'AM', customer_name:'Zomato India',   regular_amount:500000,  upsell_amount:0,       month:'January',  year:2026},
+    {rep_name:'Rahul Sharma',rep_type:'AM', customer_name:'Reliance Jio',  regular_amount:0,        upsell_amount:700000,  month:'February', year:2026},
+    {rep_name:'Priya Patel', rep_type:'AM', customer_name:'Infosys Ltd',    regular_amount:700000,  upsell_amount:0,       month:'September',year:2025},
+    {rep_name:'Priya Patel', rep_type:'AM', customer_name:'Flipkart',       regular_amount:0,        upsell_amount:900000,  month:'November', year:2025},
+    {rep_name:'Priya Patel', rep_type:'AM', customer_name:"Byju's",         regular_amount:600000,  upsell_amount:0,       month:'December', year:2025},
+    {rep_name:'Priya Patel', rep_type:'AM', customer_name:'Infosys Ltd',    regular_amount:0,        upsell_amount:800000,  month:'January',  year:2026},
+    {rep_name:'Priya Patel', rep_type:'AM', customer_name:'Flipkart',       regular_amount:600000,  upsell_amount:0,       month:'February', year:2026},
+    {rep_name:'Neha Gupta',  rep_type:'AM', customer_name:'TCS',            regular_amount:1400000, upsell_amount:0,       month:'November', year:2025},
+    {rep_name:'Neha Gupta',  rep_type:'AM', customer_name:'HDFC Bank',      regular_amount:0,        upsell_amount:1000000, month:'January',  year:2026},
+    {rep_name:'Neha Gupta',  rep_type:'AM', customer_name:'TCS',            regular_amount:800000,  upsell_amount:0,       month:'February', year:2026},
+    {rep_name:'Amit Singh',  rep_type:'CSM',customer_name:'Reliance Jio',  regular_amount:500000,  upsell_amount:0,       month:'October',  year:2025},
+    {rep_name:'Amit Singh',  rep_type:'CSM',customer_name:'TCS',            regular_amount:0,        upsell_amount:400000,  month:'December', year:2025},
+    {rep_name:'Sara Mehta',  rep_type:'CSM',customer_name:'Infosys Ltd',    regular_amount:600000,  upsell_amount:0,       month:'November', year:2025},
+    {rep_name:'Sara Mehta',  rep_type:'CSM',customer_name:'HDFC Bank',      regular_amount:0,        upsell_amount:500000,  month:'February', year:2026},
+    {rep_name:'Vikram Nair', rep_type:'CSM',customer_name:'Zomato India',   regular_amount:0,        upsell_amount:450000,  month:'January',  year:2026},
+    {rep_name:'Vikram Nair', rep_type:'CSM',customer_name:'Meesho',         regular_amount:350000,  upsell_amount:0,       month:'February', year:2026},
   ];
   C.forEach((c,i)=>c.id=i+1);
   ls.set('cols',C);
