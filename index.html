@@ -155,6 +155,7 @@
       <button class="nav-btn" data-page="collections"   onclick="go('collections')">   <span>💰</span> Collections</button>
       <button class="nav-btn" data-page="incentives"    onclick="go('incentives')">    <span>🏆</span> Incentives</button>
       <button class="nav-btn" data-page="quarterly"     onclick="go('quarterly')">     <span>📅</span> Quarterly</button>
+      <button class="nav-btn" data-page="targets"       onclick="go('targets')">       <span>📊</span> Targets</button>
       <button class="nav-btn" data-page="reports"       onclick="go('reports')">       <span>📈</span> Reports</button>
       <button class="nav-btn" data-page="settings"      onclick="go('settings')">      <span>⚙️</span> Settings</button>
     </nav>
@@ -237,6 +238,12 @@ const csmScores    = () => ls.get('csm_scores', []);
 const setCsmScores = v  => ls.set('csm_scores', v);
 const invs         = () => ls.get('invs', []);
 const setInvs      = v  => ls.set('invs', v);
+const importLogs    = () => ls.get('import_logs', []);
+const setImportLogs = v  => ls.set('import_logs', v);
+const plans    = () => ls.get('plans', []);
+const setPlans = v  => ls.set('plans', v);
+const targets    = () => ls.get('targets', []);
+const setTargets = v  => ls.set('targets', v);
 
 function nextAccCode(){
   const all=accs();
@@ -297,6 +304,42 @@ function enrichAcc(a) {
   return {...a, arr, mrr, days, renewalStatus, renewalQ, renewalFy};
 }
 
+function logImport(type, filename, total, success, errors){
+  const logs=importLogs();
+  logs.unshift({id:uid(logs),type,filename:filename||'upload',timestamp:new Date().toISOString(),total,success,failed:total-success,errors:errors||[]});
+  setImportLogs(logs.slice(0,100));
+}
+function getPlanForDate(dateStr){
+  const c=cfg();
+  const defaults={am_pct:c.am_pct||5,csm_pct:c.csm_pct||3,am_upsell_pct:c.am_upsell_pct||8,csm_upsell_pct:c.csm_upsell_pct||6};
+  if(!dateStr) return defaults;
+  const d=new Date(dateStr);
+  if(isNaN(d)) return defaults;
+  const active=plans().filter(p=>{
+    const from=p.effective_from?new Date(p.effective_from):null;
+    const to=p.effective_to?new Date(p.effective_to):null;
+    return (!from||d>=from)&&(!to||d<=to);
+  }).sort((a,b)=>new Date(b.effective_from||0)-new Date(a.effective_from||0));
+  return active[0]||defaults;
+}
+function getTarget(repName, fy, q){
+  return targets().find(t=>t.rep_name===repName&&t.fy===fy&&t.quarter===q)||null;
+}
+function applyTargetLogic(baseInc, collected, tgt){
+  if(!tgt) return baseInc;
+  const threshAmt=(tgt.target_amount||0)*(tgt.threshold_pct||0)/100;
+  if(threshAmt>0&&collected<threshAmt) return 0;
+  let inc=baseInc;
+  if(tgt.accelerator_pct&&tgt.target_amount&&collected>tgt.target_amount){
+    const onTarget=tgt.target_amount;
+    const overTarget=collected-onTarget;
+    const baseRate=inc>0?inc/collected:0;
+    inc=onTarget*baseRate+(overTarget*tgt.accelerator_pct/100);
+  }
+  if(tgt.cap_amount&&inc>tgt.cap_amount) inc=tgt.cap_amount;
+  return inc;
+}
+
 // ═══════════════════════════════════════════════════
 //  ROUTER
 // ═══════════════════════════════════════════════════
@@ -318,7 +361,7 @@ function go(p, filter=null){
 }
 function render(){
   document.getElementById('app').innerHTML='';
-  ({dashboard,accounts,opportunities,invoices,collections,incentives,quarterly,reports,settings,acc360})[page]();
+  ({dashboard,accounts,opportunities,invoices,collections,incentives,quarterly,targets:targets_page,reports,settings,acc360})[page]();
 }
 
 // Chart.js global defaults
@@ -811,6 +854,7 @@ function executeImport(){
   const maxId=existing.length?existing.reduce((mx,a)=>Math.max(mx,Number(a.id)||0),0):0;
   imported.forEach((a,i)=>{a.id=maxId+i+1; if(!a.account_code){const nums=[...existing,...imported.slice(0,i)].map(x=>{const m=x.account_code?.match(/(\d+)$/);return m?parseInt(m[1]):0;});a.account_code='ACC-'+String(Math.max(0,...nums)+1).padStart(3,'0');}});
   setAccs([...existing,...imported]);
+  logImport('accounts', 'accounts.csv', (csvParsed.rows||[]).length, added, []);
   csvParsed=null; csvMapping={};
   toast(`Imported ${added} accounts`); accMode='list'; go('accounts');
 }
@@ -1729,6 +1773,7 @@ function executeColImport(){
   const maxId=existing.length?Math.max(...existing.map(a=>a.id)):0;
   imported.forEach((r,i)=>{r.id=maxId+i+1;});
   setCols([...existing,...imported]);
+  logImport('collections', 'collections.csv', (colCsvParsed.rows||[]).length, added, []);
   colCsvParsed=null; colCsvMapping={};
   toast(`Imported ${added} collection entries`); colMode='list'; go('collections');
 }
@@ -2052,8 +2097,14 @@ function renderQtrBody(){
   const amRows=Object.entries(amMap).map(([name,{reg,ups}])=>{
     const cu=(reps.find(r=>r.name===name)||{}).custom_pct;
     const rRate=cu!==undefined?cu:amPct, uRate=cu!==undefined?cu:amUp;
-    const regInc=reg*rRate/100, upsInc=ups*uRate/100;
-    return{name,reg,ups,rRate,uRate,regInc,upsInc,total:regInc+upsInc};
+    const baseRegInc=reg*rRate/100, baseUpsInc=ups*uRate/100;
+    const baseTotal=baseRegInc+baseUpsInc;
+    const tgt=getTarget(name,selFy,selQ);
+    const collected=reg+ups;
+    const finalTotal=applyTargetLogic(baseTotal,collected,tgt);
+    const gated=tgt&&finalTotal===0&&baseTotal>0;
+    const tgtPct=tgt?.target_amount?Math.round(collected/tgt.target_amount*100):null;
+    return{name,reg,ups,rRate,uRate,regInc:baseRegInc,upsInc:baseUpsInc,total:finalTotal,gated,tgtPct,tgt};
   }).sort((a,b)=>b.total-a.total);
   const csmRows=Object.entries(csmMap).map(([name,{reg,ups}])=>{
     const cu=(reps.find(r=>r.name===name)||{}).custom_pct;
@@ -2062,7 +2113,12 @@ function renderQtrBody(){
     const sc=getCsmScore(name,selFy,selQ);
     const avg=((sc.qbr||0)+(sc.adoption||0)+(sc.efforts||0))/3;
     const mult=avg/5;
-    return{name,reg,ups,rRate,uRate,baseInc,qbr:sc.qbr||0,adoption:sc.adoption||0,efforts:sc.efforts||0,avg,mult,finalInc:baseInc*mult};
+    const collected=reg+ups;
+    const tgt=getTarget(name,selFy,selQ);
+    const finalBase=applyTargetLogic(baseInc,collected,tgt);
+    const gated=tgt&&finalBase===0&&baseInc>0;
+    const tgtPct=tgt?.target_amount?Math.round(collected/tgt.target_amount*100):null;
+    return{name,reg,ups,rRate,uRate,baseInc,qbr:sc.qbr||0,adoption:sc.adoption||0,efforts:sc.efforts||0,avg,mult,finalInc:finalBase*mult,gated,tgtPct,tgt};
   }).sort((a,b)=>b.finalInc-a.finalInc);
   const amTot=amRows.reduce((s,r)=>s+r.total,0);
   const csmTotBase=csmRows.reduce((s,r)=>s+r.baseInc,0);
@@ -2078,23 +2134,24 @@ function renderQtrBody(){
     ${sectionHead('AM Incentives','🎯')}
     <div class="card overflow-hidden mb-6">
       <div class="overflow-x-auto">
-      <table class="w-full text-sm dt min-w-[780px]">
-        <thead class="bg-slate-50 border-b border-slate-100">${thRow(['Rep','Reg. Collected','Rate','Reg. Inc.','Upsell Collected','Rate','Upsell Inc.','Total Incentive'])}</thead>
+      <table class="w-full text-sm dt min-w-[860px]">
+        <thead class="bg-slate-50 border-b border-slate-100">${thRow(['Rep','Attainment','Reg. Collected','Rate','Reg. Inc.','Upsell Collected','Rate','Upsell Inc.','Total Incentive'])}</thead>
         <tbody class="divide-y divide-slate-50">
           ${amRows.map(r=>`<tr>
             <td class="px-4 py-3 font-semibold text-slate-800">${r.name}</td>
+            <td class="px-4 py-3">${r.tgtPct!==null?`<span class="text-xs font-bold ${r.tgtPct>=100?'text-emerald-400':r.tgtPct>=70?'text-amber-400':'text-red-400'}">${r.tgtPct}%</span>`:r.gated?'<span class="text-xs text-red-400">⚠ gated</span>':'<span class="text-xs text-slate-500">—</span>'}</td>
             <td class="px-4 py-3 text-slate-500">${r.reg>0?inr(r.reg):'—'}</td>
             <td class="px-4 py-3 text-xs" style="color:#818cf8">${r.rRate}%</td>
             <td class="px-4 py-3 font-semibold" style="color:#a5b4fc">${r.regInc>0?inr(Math.round(r.regInc)):'—'}</td>
             <td class="px-4 py-3 text-slate-500">${r.ups>0?inr(r.ups):'—'}</td>
             <td class="px-4 py-3 text-xs" style="color:#fbbf24">${r.uRate}%</td>
             <td class="px-4 py-3 font-semibold" style="color:#fcd34d">${r.upsInc>0?inr(Math.round(r.upsInc)):'—'}</td>
-            <td class="px-4 py-3 font-bold text-emerald-400">${inr(Math.round(r.total))}</td>
+            <td class="px-4 py-3 font-bold text-emerald-400">${r.gated?'<span class="text-red-400 text-xs">Gated</span>':inr(Math.round(r.total))}</td>
           </tr>`).join('')}
         </tbody>
         <tfoot class="bg-slate-50 border-t border-slate-100"><tr>
           <td class="px-4 py-3 text-xs text-slate-400">${amRows.length} rep${amRows.length!==1?'s':''}</td>
-          <td colspan="6"></td>
+          <td colspan="7"></td>
           <td class="px-4 py-3 font-bold text-emerald-400">${inr(Math.round(amTot))}</td>
         </tr></tfoot>
       </table></div></div>`}
@@ -2177,8 +2234,11 @@ function downloadQtrCSV(){
 //  INCENTIVES
 // ═══════════════════════════════════════════════════
 function incentives(){
-  const yrs=[...new Set(cols().map(c=>c.year))].sort((a,b)=>b-a);
   const c=cfg();
+  const allCols=cols();
+  const allFys=[...new Set(allCols.map(col=>{const mi=MONTHS.indexOf(col.month);return mi>=0?fyq(mi,Number(col.year)).fy:null;}).filter(Boolean))].sort().reverse();
+  const curFyq=fyq(new Date().getMonth(),new Date().getFullYear());
+  if(!allFys.includes(curFyq.fy)) allFys.unshift(curFyq.fy);
   document.getElementById('app').innerHTML=`
     ${pageHeader('Incentive Calculator','Calculated from collections — Regular & Upsell/Cross-sell')}
     <div class="card p-4 mb-5">
@@ -2202,7 +2262,7 @@ function incentives(){
           <button onclick="go('settings')" class="text-xs text-indigo-400 hover:underline border rounded-lg px-3 py-1.5" style="border-color:rgba(99,102,241,0.3)">✎ Edit Rates</button>
         </div>
         <div class="flex flex-wrap gap-2">
-          ${sel('i-yr',[{v:'',l:'All Years'},...yrs.map(y=>({v:y,l:y}))], '', 'w-auto')}
+          ${sel('i-fy',[{v:'',l:'All FY'},...allFys.map(f=>({v:f,l:f}))], '', 'w-auto')}
           ${sel('i-mo',[{v:'',l:'All Months'},...MONTHS.map(m=>({v:m,l:m}))], '', 'w-auto')}
           ${sel('i-ty',[{v:'',l:'All Types'},{v:'AM',l:'AM'},{v:'CSM',l:'CSM'}], '', 'w-auto')}
         </div>
@@ -2212,63 +2272,60 @@ function incentives(){
     <div id="i-table" class="mb-5"></div>
     ${chartCard('Incentive by Rep — Regular (indigo) vs Upsell (amber)','ch-i',160,1)}
   `;
-  ['i-yr','i-mo','i-ty'].forEach(id=>document.getElementById(id).onchange=calcIncentives);
+  ['i-fy','i-mo','i-ty'].forEach(id=>document.getElementById(id).onchange=calcIncentives);
   calcIncentives();
 }
 function calcIncentives(){
-  const c=cfg();
-  const amPct=c.am_pct||5, csmPct=c.csm_pct||3;
-  const amUp=c.am_upsell_pct||8, csmUp=c.csm_upsell_pct||6;
-  const reps=c.reps||[];
-  const selYr=document.getElementById('i-yr').value;
-  const selMo=document.getElementById('i-mo').value;
-  const selTy=document.getElementById('i-ty').value;
+  const selFy=document.getElementById('i-fy')?.value||'';
+  const selMo=document.getElementById('i-mo')?.value||'';
+  const reps=(cfg().reps)||[];
   let data=cols();
-  if(selYr) data=data.filter(x=>String(x.year)===String(selYr));
+  if(selFy) data=data.filter(x=>{const mi=MONTHS.indexOf(x.month);return mi>=0&&fyq(mi,Number(x.year)).fy===selFy;});
   if(selMo) data=data.filter(x=>x.month===selMo);
-
-  // Aggregate per rep — supports new format (am_name+csm_name), previous format (rep_name+rep_type), and legacy
   const repMap={};
-  function _addRep(name,type,reg,ups){
+  function _addRep(name,type,reg,ups,plan){
     if(!name)return;
-    if(!repMap[name])repMap[name]={type,reg:0,ups:0};
+    if(!repMap[name])repMap[name]={type,reg:0,ups:0,regInc:0,upsInc:0};
     repMap[name].reg+=reg; repMap[name].ups+=ups;
+    const custom=(reps.find(r=>r.name===name)||{}).custom_pct;
+    const rRate=custom!==undefined?custom:(type==='AM'?plan.am_pct:plan.csm_pct);
+    const uRate=custom!==undefined?custom:(type==='AM'?plan.am_upsell_pct:plan.csm_upsell_pct);
+    repMap[name].regInc+=reg*rRate/100;
+    repMap[name].upsInc+=ups*uRate/100;
   }
   data.forEach(x=>{
+    const plan=getPlanForDate(x.collection_date);
     if(x.am_name!==undefined){
-      // New format: both AM and CSM credited on same invoice
-      _addRep(x.am_name,'AM',x.regular_amount||0,x.upsell_amount||0);
-      _addRep(x.csm_name,'CSM',x.regular_amount||0,x.upsell_amount||0);
+      _addRep(x.am_name,'AM',x.regular_amount||0,x.upsell_amount||0,plan);
+      _addRep(x.csm_name,'CSM',x.regular_amount||0,x.upsell_amount||0,plan);
     } else if(x.regular_amount!==undefined){
-      _addRep(x.rep_name,x.rep_type,x.regular_amount||0,x.upsell_amount||0);
+      _addRep(x.rep_name,x.rep_type,x.regular_amount||0,x.upsell_amount||0,plan);
     } else {
-      if((x.deal_type||'Regular')==='Upsell/Cross-sell') _addRep(x.rep_name,x.rep_type,0,x.amount||0);
-      else _addRep(x.rep_name,x.rep_type,x.amount||0,0);
+      if((x.deal_type||'Regular')==='Upsell/Cross-sell') _addRep(x.rep_name,x.rep_type,0,x.amount||0,plan);
+      else _addRep(x.rep_name,x.rep_type,x.amount||0,0,plan);
     }
   });
+  const selTy=document.getElementById('i-ty')?.value||'';
   if(selTy) Object.keys(repMap).forEach(k=>{if(repMap[k].type!==selTy)delete repMap[k];});
-
-  _incRows=Object.entries(repMap).map(([name,{type,reg,ups}])=>{
+  _incRows=Object.entries(repMap).map(([name,{type,reg,ups,regInc,upsInc}])=>{
     const custom=(reps.find(r=>r.name===name)||{}).custom_pct;
-    const rRate=custom!==undefined?custom:(type==='AM'?amPct:csmPct);
-    const uRate=custom!==undefined?custom:(type==='AM'?amUp:csmUp);
-    const regInc=reg*rRate/100, upsInc=ups*uRate/100;
+    const plan=getPlanForDate(null);
+    const rRate=custom!==undefined?custom:(type==='AM'?plan.am_pct:plan.csm_pct);
+    const uRate=custom!==undefined?custom:(type==='AM'?plan.am_upsell_pct:plan.csm_upsell_pct);
     return{name,type,reg,ups,rRate,uRate,regInc,upsInc,totalColl:reg+ups,totalInc:regInc+upsInc};
   }).sort((a,b)=>b.totalInc-a.totalInc);
   const rows=_incRows;
-
+  const c=cfg(), amPct=c.am_pct||5, csmPct=c.csm_pct||3, amUp=c.am_upsell_pct||8, csmUp=c.csm_upsell_pct||6;
   const sumReg=rows.reduce((s,r)=>s+r.reg,0);
   const sumUps=rows.reduce((s,r)=>s+r.ups,0);
   const sumRegInc=rows.reduce((s,r)=>s+r.regInc,0);
   const sumUpsInc=rows.reduce((s,r)=>s+r.upsInc,0);
-
   document.getElementById('i-metrics').innerHTML=`
     ${mc('Regular Collected',inr(sumReg),'AM '+amPct+'% · CSM '+csmPct+'%',1)}
     ${mc('Upsell Collected',inr(sumUps),'AM '+amUp+'% · CSM '+csmUp+'%',3)}
-    ${mc('Regular Incentive',inr(sumRegInc),'Earned on regular',0)}
-    ${mc('Upsell Incentive',inr(sumUpsInc),'Earned on upsells',2)}
+    ${mc('Regular Incentive',inr(Math.round(sumRegInc)),'Earned on regular',0)}
+    ${mc('Upsell Incentive',inr(Math.round(sumUpsInc)),'Earned on upsells',2)}
   `;
-
   document.getElementById('i-table').innerHTML=rows.length===0
     ? card(emptyState('No collections for this period. Import a CSV or add entries manually.'),'p-4')
     : `<div class="card overflow-hidden">
@@ -2281,25 +2338,24 @@ function calcIncentives(){
             <td class="px-4 py-3">${typeBadge(r.type)}</td>
             <td class="px-4 py-3 text-slate-500">${r.reg>0?inr(r.reg):'—'}</td>
             <td class="px-4 py-3 text-xs" style="color:#818cf8">${r.rRate}%</td>
-            <td class="px-4 py-3 font-semibold" style="color:#a5b4fc">${r.regInc>0?inr(r.regInc):'—'}</td>
+            <td class="px-4 py-3 font-semibold" style="color:#a5b4fc">${r.regInc>0?inr(Math.round(r.regInc)):'—'}</td>
             <td class="px-4 py-3 text-slate-500">${r.ups>0?inr(r.ups):'—'}</td>
             <td class="px-4 py-3 text-xs" style="color:#fbbf24">${r.uRate}%</td>
-            <td class="px-4 py-3 font-semibold" style="color:#fcd34d">${r.upsInc>0?inr(r.upsInc):'—'}</td>
-            <td class="px-4 py-3 font-bold text-emerald-600 text-base">${inr(r.totalInc)}</td>
+            <td class="px-4 py-3 font-semibold" style="color:#fcd34d">${r.upsInc>0?inr(Math.round(r.upsInc)):'—'}</td>
+            <td class="px-4 py-3 font-bold text-emerald-600 text-base">${inr(Math.round(r.totalInc))}</td>
           </tr>`).join('')}
         </tbody>
         <tfoot class="bg-slate-50 border-t border-slate-100"><tr>
           <td colspan="2" class="px-4 py-3 text-xs text-slate-400">${rows.length} rep${rows.length!==1?'s':''}</td>
           <td class="px-4 py-3 font-bold text-slate-700">${inr(sumReg)}</td><td></td>
-          <td class="px-4 py-3 font-bold" style="color:#a5b4fc">${inr(sumRegInc)}</td>
+          <td class="px-4 py-3 font-bold" style="color:#a5b4fc">${inr(Math.round(sumRegInc))}</td>
           <td class="px-4 py-3 font-bold text-slate-700">${inr(sumUps)}</td><td></td>
-          <td class="px-4 py-3 font-bold" style="color:#fcd34d">${inr(sumUpsInc)}</td>
-          <td class="px-4 py-3 font-bold text-emerald-600">${inr(sumRegInc+sumUpsInc)}</td>
+          <td class="px-4 py-3 font-bold" style="color:#fcd34d">${inr(Math.round(sumUpsInc))}</td>
+          <td class="px-4 py-3 font-bold text-emerald-600">${inr(Math.round(sumRegInc+sumUpsInc))}</td>
         </tr></tfoot>
       </table>
       </div>
     </div>`;
-
   if(charts.i){charts.i.destroy();delete charts.i;}
   if(rows.length>0){
     charts.i=new Chart(document.getElementById('ch-i'),{
@@ -2356,11 +2412,98 @@ function settings(){
       </table>
     </div>`}
 
+    ${sectionHead('Incentive Plans','📅')}
+    <p class="text-xs text-slate-500 mb-4">Plans override global rates for collections within their date range. Most recent matching plan wins.</p>
+    ${(()=>{
+      const ps=plans();
+      return `
+      <div class="card overflow-hidden mb-5">
+        ${ps.length===0?`<div class="p-5 text-sm text-slate-500">No plans yet. Add one below to override rates for specific date ranges.</div>`:`
+        <div class="overflow-x-auto">
+        <table class="w-full text-sm dt min-w-[780px]">
+          <thead class="bg-slate-50 border-b border-slate-100">${thRow(['Plan Name','From','To','AM Reg%','CSM Reg%','AM Upsell%','CSM Upsell%',''])}</thead>
+          <tbody class="divide-y divide-slate-50">
+            ${ps.map(p=>`<tr>
+              <td class="px-4 py-3 font-semibold text-slate-800">${p.name}</td>
+              <td class="px-4 py-3 text-xs text-slate-500">${p.effective_from||'—'}</td>
+              <td class="px-4 py-3 text-xs text-slate-500">${p.effective_to||'Open'}</td>
+              <td class="px-4 py-3 text-xs" style="color:#a5b4fc">${p.am_pct}%</td>
+              <td class="px-4 py-3 text-xs" style="color:#a5b4fc">${p.csm_pct}%</td>
+              <td class="px-4 py-3 text-xs" style="color:#fcd34d">${p.am_upsell_pct}%</td>
+              <td class="px-4 py-3 text-xs" style="color:#fcd34d">${p.csm_upsell_pct}%</td>
+              <td class="px-4 py-3"><button onclick="delPlan(${p.id})" class="text-red-400 hover:underline text-xs">Remove</button></td>
+            </tr>`).join('')}
+          </tbody>
+        </table></div>`}
+      </div>
+      <div class="card p-5 mb-5">
+        <h2 class="text-sm font-bold text-slate-800 mb-4">Add Incentive Plan</h2>
+        <div class="space-y-3">
+          <div>${lbl('Plan Name *')}${inp('pl-name','text','','','placeholder="e.g. FY2025-26 Rates"')}</div>
+          ${frow(lbl('Effective From *')+inp('pl-from','date',''), lbl('Effective To (leave blank = open)')+inp('pl-to','date',''))}
+          <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest pt-1">Regular Deals</p>
+          ${frow(lbl('AM Regular %')+inp('pl-am','number','5'), lbl('CSM Regular %')+inp('pl-csm','number','3'))}
+          <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest pt-1">Upsell / Cross-sell</p>
+          ${frow(lbl('AM Upsell %')+inp('pl-am-up','number','8'), lbl('CSM Upsell %')+inp('pl-csm-up','number','6'))}
+          <button onclick="savePlan()" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-2.5 rounded-xl text-sm font-semibold shadow shadow-indigo-200 mt-1">Add Plan</button>
+        </div>
+      </div>`;
+    })()}
+
+    ${sectionHead('Data Portability','💾')}
+    ${card(`
+      <div class="flex flex-wrap gap-3 items-start">
+        <div class="flex-1 min-w-[200px]">
+          <p class="text-sm font-semibold text-slate-800 mb-1">Full Backup</p>
+          <p class="text-xs text-slate-500 mb-3">Download all your data as a JSON file. Use this to move data between devices or create a snapshot.</p>
+          <button onclick="exportBackup()" class="border text-emerald-400 text-sm font-medium px-4 py-2 rounded-xl transition hover:bg-emerald-500/10" style="border-color:rgba(16,185,129,0.35)">↓ Download Backup</button>
+        </div>
+        <div class="flex-1 min-w-[200px]">
+          <p class="text-sm font-semibold text-slate-800 mb-1">Restore from Backup</p>
+          <p class="text-xs text-slate-500 mb-3">Restore from a previously downloaded backup file. Data is merged (existing records are kept).</p>
+          <button onclick="importBackup()" class="border text-blue-400 text-sm font-medium px-4 py-2 rounded-xl transition hover:bg-blue-500/10" style="border-color:rgba(59,130,246,0.35)">↑ Restore Backup</button>
+        </div>
+      </div>
+    `,'p-5')}
+
     ${sectionHead('Data Management','🗄️')}
     ${card(`
       <p class="text-sm text-slate-600 mb-4">Permanently delete all accounts, opportunities, collections and configuration.</p>
       <button onclick="if(confirm('Clear ALL data? This cannot be undone.'))clearAllData()" class="border text-red-400 text-sm font-medium px-4 py-2.5 rounded-xl transition" style="border-color:rgba(239,68,68,0.3);background:rgba(239,68,68,0.05)">✕ Clear All Data</button>
     `,'p-5')}
+
+    ${(()=>{
+      const logs=importLogs();
+      if(logs.length===0) return '';
+      return `
+        ${sectionHead('Import History','📋')}
+        <div class="card overflow-hidden mb-5">
+          <div class="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+            <span class="text-sm font-bold text-slate-800">Recent Imports</span>
+            <button onclick="clearImportLogs()" class="text-xs text-red-400 hover:underline">Clear History</button>
+          </div>
+          <div class="divide-y divide-slate-50">
+            ${logs.slice(0,20).map(l=>{
+              const dt=new Date(l.timestamp).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'});
+              const typeLabel={'accounts':'Accounts','collections':'Collections','invoices':'Invoices','opportunities':'Opportunities'}[l.type]||l.type;
+              return `<div class="px-5 py-3">
+                <div class="flex items-center justify-between mb-1">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs font-semibold text-slate-800">${typeLabel}</span>
+                    <span class="text-[10px] text-slate-500">${dt}</span>
+                  </div>
+                  <div class="flex items-center gap-3 text-xs">
+                    <span class="text-emerald-400">${l.success} ok</span>
+                    ${l.failed>0?`<span class="text-amber-400">${l.failed} failed</span>`:''}
+                    <span class="text-slate-500">${l.total} total</span>
+                  </div>
+                </div>
+                ${l.errors&&l.errors.length>0?`<div class="mt-1 space-y-0.5">${l.errors.slice(0,5).map(e=>`<p class="text-[10px] text-red-400">Row ${e.row}: ${e.message}</p>`).join('')}</div>`:''}
+              </div>`;
+            }).join('')}
+          </div>
+        </div>`;
+    })()}
   `;
 }
 function saveRates(){
@@ -2385,11 +2528,239 @@ function delRep(name){
   const c=cfg(); c.reps=(c.reps||[]).filter(r=>r.name!==name);
   setCfg(c); toast(`Removed ${name}`); go('settings');
 }
+function clearImportLogs(){
+  setImportLogs([]); toast('Import history cleared'); go('settings');
+}
+function savePlan(){
+  const name=document.getElementById('pl-name').value.trim();
+  const from=document.getElementById('pl-from').value;
+  if(!name||!from){alert('Plan name and effective from date are required.');return;}
+  const ps=plans();
+  const p={
+    id:uid(ps), name, effective_from:from,
+    effective_to:document.getElementById('pl-to').value||null,
+    am_pct:parseFloat(document.getElementById('pl-am').value)||5,
+    csm_pct:parseFloat(document.getElementById('pl-csm').value)||3,
+    am_upsell_pct:parseFloat(document.getElementById('pl-am-up').value)||8,
+    csm_upsell_pct:parseFloat(document.getElementById('pl-csm-up').value)||6,
+  };
+  setPlans([...ps,p]); toast('Plan saved!'); go('settings');
+}
+function delPlan(id){
+  if(!confirm('Remove this plan?'))return;
+  setPlans(plans().filter(p=>p.id!==id)); toast('Plan removed'); go('settings');
+}
 
 function clearAllData(){
-  ['opps','cols','accs','cfg','invs','csm_scores'].forEach(k=>localStorage.removeItem(k));
+  ['opps','cols','accs','cfg','invs','csm_scores','import_logs','plans','targets'].forEach(k=>localStorage.removeItem(k));
   toast('All data cleared'); go('settings');
 }
+function exportBackup(){
+  const data={
+    _version:1, _exported:new Date().toISOString(), _app:'Travelling Salesman',
+    accs:accs(), invs:invs(), opps:opps(), cols:cols(),
+    cfg:cfg(), csm_scores:csmScores(), plans:plans(), targets:targets(),
+  };
+  const json=JSON.stringify(data,null,2);
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([json],{type:'application/json'}));
+  a.download='ts-backup-'+new Date().toISOString().slice(0,10)+'.json';
+  a.click(); toast('Backup downloaded!');
+}
+function importBackup(){
+  const input=document.createElement('input'); input.type='file'; input.accept='.json';
+  input.onchange=e=>{
+    const file=e.target.files[0]; if(!file)return;
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      try{
+        const data=JSON.parse(ev.target.result);
+        if(!data._app&&!data.accs&&!data.cols){alert('Invalid backup file.');return;}
+        if(!confirm(`Restore backup from ${data._exported?new Date(data._exported).toLocaleString('en-IN'):'unknown date'}?\nThis will MERGE with existing data (not replace).`))return;
+        function mergeArr(existing, incoming){
+          const ids=new Set(existing.map(x=>x.id));
+          return [...existing,...(incoming||[]).filter(x=>!ids.has(x.id))];
+        }
+        if(data.accs) setAccs(mergeArr(accs(),data.accs));
+        if(data.invs) setInvs(mergeArr(invs(),data.invs));
+        if(data.opps) setOpps(mergeArr(opps(),data.opps));
+        if(data.cols) setCols(mergeArr(cols(),data.cols));
+        if(data.plans) setPlans(mergeArr(plans(),data.plans));
+        if(data.targets) setTargets(mergeArr(targets(),data.targets));
+        if(data.csm_scores){
+          const sc=csmScores();
+          const merged=[...sc,...(data.csm_scores||[]).filter(s=>!sc.some(x=>x.csm_name===s.csm_name&&x.fy===s.fy&&x.quarter===s.quarter))];
+          setCsmScores(merged);
+        }
+        toast('Backup restored (merged)!'); go('dashboard');
+      }catch(err){alert('Failed to parse backup: '+err.message);}
+    };
+    reader.readAsText(file);
+  };
+  input.click();
+}
+
+// ═══════════════════════════════════════════════════
+//  TARGETS
+// ═══════════════════════════════════════════════════
+function targets_page(){
+  const now=new Date();
+  const curFyq=fyq(now.getMonth(),now.getFullYear());
+  const allFys=[...new Set([...cols(),...opps()].map(x=>{const mi=MONTHS.indexOf(x.month||x.close_month);return mi>=0?fyq(mi,Number(x.year||x.close_year)).fy:null;}).filter(Boolean))].sort().reverse();
+  if(!allFys.includes(curFyq.fy)) allFys.unshift(curFyq.fy);
+  window._selTgtQtr=window._selTgtQtr||curFyq.q;
+  window._selTgtFy=window._selTgtFy||curFyq.fy;
+  document.getElementById('app').innerHTML=`
+    ${pageHeader('Targets','Quarterly targets, thresholds & accelerators per rep',
+      `<button onclick="go('targets','add')" class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold px-4 py-2 rounded-xl shadow">+ Add Target</button>`
+    )}
+    <div class="flex flex-wrap gap-3 items-center mb-5">
+      ${sel('tgt-fy',[...allFys.map(f=>({v:f,l:f}))],window._selTgtFy,'w-auto')}
+      <div class="flex gap-1">
+        ${['Q1','Q2','Q3','Q4'].map(q=>`
+          <button id="ttab-${q}" onclick="selectTgtQtr('${q}')"
+            class="px-4 py-2 rounded-xl text-sm font-semibold transition"
+            style="${q===window._selTgtQtr?'background:linear-gradient(135deg,#3b82f6,#6366f1);color:#fff;box-shadow:0 4px 14px rgba(99,102,241,.35)':'border:1px solid rgba(255,255,255,0.1);color:#94a3b8'}"
+          >${q}</button>`).join('')}
+      </div>
+    </div>
+    <div data-tgt-body>${window._pageFilter==='add'?renderTgtForm():renderTgtBody()}</div>
+  `;
+  document.getElementById('tgt-fy').onchange=()=>{window._selTgtFy=document.getElementById('tgt-fy').value;renderTgtBody_();};
+  window._pageFilter=null;
+}
+function selectTgtQtr(q){
+  window._selTgtQtr=q;
+  ['Q1','Q2','Q3','Q4'].forEach(qq=>{
+    const b=document.getElementById('ttab-'+qq);
+    if(!b)return;
+    b.style.cssText=qq===q?'background:linear-gradient(135deg,#3b82f6,#6366f1);color:#fff;box-shadow:0 4px 14px rgba(99,102,241,.35)':'border:1px solid rgba(255,255,255,0.1);color:#94a3b8';
+  });
+  renderTgtBody_();
+}
+function renderTgtBody_(){
+  const el=document.querySelector('[data-tgt-body]');
+  if(el) el.innerHTML=renderTgtBody();
+}
+function renderTgtBody(){
+  const selFy=document.getElementById('tgt-fy')?.value||window._selTgtFy||'';
+  const selQ=window._selTgtQtr||'Q1';
+  if(!selFy) return card(emptyState('Select a financial year.'),'p-4');
+  const months=qtrToMonths(selFy,selQ);
+  const mset=new Set(months.map(x=>x.m+'|'+x.y));
+  const data=cols().filter(x=>mset.has(x.month+'|'+Number(x.year)));
+  const amMap={},csmMap={};
+  data.forEach(x=>{
+    const reg=x.regular_amount||0,ups=x.upsell_amount||0;
+    const amN=x.am_name||(x.rep_type==='AM'?x.rep_name:null);
+    const csmN=x.csm_name||(x.rep_type==='CSM'?x.rep_name:null);
+    if(amN){if(!amMap[amN])amMap[amN]={reg:0,ups:0};amMap[amN].reg+=reg;amMap[amN].ups+=ups;}
+    if(csmN){if(!csmMap[csmN])csmMap[csmN]={reg:0,ups:0};csmMap[csmN].reg+=reg;csmMap[csmN].ups+=ups;}
+  });
+  const tgts=targets().filter(t=>t.fy===selFy&&t.quarter===selQ);
+  function mkRow(name,type,collected){
+    const tgt=tgts.find(t=>t.rep_name===name&&t.rep_type===type)||null;
+    const tgtAmt=tgt?.target_amount||0;
+    const pct=tgtAmt>0?Math.round(collected/tgtAmt*100):null;
+    const threshAmt=tgt?(tgtAmt*(tgt.threshold_pct||0)/100):0;
+    const gated=tgt&&threshAmt>0&&collected<threshAmt;
+    const bar=pct!==null?`<div class="w-full h-1.5 rounded-full mt-1" style="background:rgba(255,255,255,0.1)"><div class="h-1.5 rounded-full" style="width:${Math.min(pct,100)}%;background:${pct>=100?'#10b981':pct>=70?'#f59e0b':'#ef4444'}"></div></div>`:'';
+    return `<tr>
+      <td class="px-4 py-3 font-semibold text-slate-800">${name}</td>
+      <td class="px-4 py-3">${tgtAmt>0?inr(tgtAmt):'<span class="text-slate-500 text-xs">Not set</span>'}</td>
+      <td class="px-4 py-3">${tgt?.threshold_pct?tgt.threshold_pct+'%':'—'}</td>
+      <td class="px-4 py-3 font-semibold text-slate-800">${inr(collected)}</td>
+      <td class="px-4 py-3">${pct!==null?`<span class="font-bold ${pct>=100?'text-emerald-400':pct>=70?'text-amber-400':'text-red-400'}">${pct}%</span>${bar}`:'—'}</td>
+      <td class="px-4 py-3">${gated?'<span class="text-xs text-red-400 font-semibold">⚠ Below threshold</span>':pct!==null&&pct>=100?'<span class="text-xs text-emerald-400">✓ Target hit</span>':'<span class="text-xs text-slate-500">In progress</span>'}</td>
+      <td class="px-4 py-3">${tgt?.accelerator_pct?tgt.accelerator_pct+'%':'—'}</td>
+      <td class="px-4 py-3">${tgt?.cap_amount?inr(tgt.cap_amount):'—'}</td>
+      <td class="px-4 py-3">
+        <button onclick="editTarget(${tgt?tgt.id:'null'},'${name}','${type}')" class="text-blue-400 hover:underline text-xs mr-2">${tgt?'Edit':'Set'}</button>
+        ${tgt?`<button onclick="delTarget(${tgt.id})" class="text-red-400 hover:underline text-xs">Del</button>`:''}
+      </td>
+    </tr>`;
+  }
+  const amRows=Object.entries(amMap).map(([name,{reg,ups}])=>mkRow(name,'AM',reg+ups));
+  const csmRows=Object.entries(csmMap).map(([name,{reg,ups}])=>mkRow(name,'CSM',reg+ups));
+  const noData=amRows.length===0&&csmRows.length===0;
+  if(noData) return card(emptyState(`No collections found for ${selQ} ${selFy}. Import collections first.`),'p-4');
+  const colHeader=thRow(['Rep','Target','Threshold %','Actual Collected','Attainment','Status','Accelerator %','Cap','']);
+  return `
+    ${amRows.length>0?`
+    ${sectionHead('AM Targets','🎯')}
+    <div class="card overflow-hidden mb-6"><div class="overflow-x-auto">
+    <table class="w-full text-sm dt min-w-[900px]">
+      <thead class="bg-slate-50 border-b border-slate-100">${colHeader}</thead>
+      <tbody class="divide-y divide-slate-50">${amRows.join('')}</tbody>
+    </table></div></div>`:''}
+    ${csmRows.length>0?`
+    ${sectionHead('CSM Targets','📊')}
+    <div class="card overflow-hidden mb-6"><div class="overflow-x-auto">
+    <table class="w-full text-sm dt min-w-[900px]">
+      <thead class="bg-slate-50 border-b border-slate-100">${colHeader}</thead>
+      <tbody class="divide-y divide-slate-50">${csmRows.join('')}</tbody>
+    </table></div></div>`:''}
+  `;
+}
+function renderTgtForm(existingId, repName, repType){
+  const tgt=existingId?targets().find(t=>t.id===existingId):null;
+  const allFys=[...new Set(cols().map(c=>{const mi=MONTHS.indexOf(c.month);return mi>=0?fyq(mi,Number(c.year)).fy:null;}).filter(Boolean))].sort().reverse();
+  const curFyq2=fyq(new Date().getMonth(),new Date().getFullYear());
+  if(!allFys.includes(curFyq2.fy)) allFys.unshift(curFyq2.fy);
+  const repsAll=(cfg().reps)||[];
+  return `<div class="card p-6 max-w-xl" id="tgt-form">
+    <h2 class="text-sm font-bold text-slate-800 mb-5">${tgt?'Edit Target':'Add Target'}</h2>
+    <div class="space-y-4">
+      <div>${lbl('Rep Name *')}${repsAll.length>0?sel('tf-rep',[{v:'',l:'Select rep...'},...repsAll.map(r=>({v:r.name,l:r.name+' ('+r.type+')'}))],tgt?.rep_name||repName||''):`${inp('tf-rep','text',tgt?.rep_name||repName||'')}`}</div>
+      <div>${lbl('Rep Type *')}${sel('tf-type',[{v:'AM',l:'AM (Account Manager)'},{v:'CSM',l:'CSM (Customer Success)'}],tgt?.rep_type||repType||'AM')}</div>
+      ${frow(
+        lbl('Financial Year *')+sel('tf-fy',[...allFys.map(f=>({v:f,l:f}))],tgt?.fy||window._selTgtFy||curFyq2.fy),
+        lbl('Quarter *')+sel('tf-q',[{v:'Q1',l:'Q1'},{v:'Q2',l:'Q2'},{v:'Q3',l:'Q3'},{v:'Q4',l:'Q4'}],tgt?.quarter||window._selTgtQtr||'Q1')
+      )}
+      <div>${lbl('Collection Target (₹) *')}${inp('tf-tgt','number',tgt?.target_amount||'')}</div>
+      <div class="grid grid-cols-3 gap-3">
+        <div>${lbl('Threshold %')}<div class="text-[10px] text-slate-500 mb-1">Min % to earn any incentive</div>${inp('tf-thresh','number',tgt?.threshold_pct||'')}</div>
+        <div>${lbl('Accelerator %')}<div class="text-[10px] text-slate-500 mb-1">Rate above 100% attainment</div>${inp('tf-accel','number',tgt?.accelerator_pct||'')}</div>
+        <div>${lbl('Cap Amount (₹)')}<div class="text-[10px] text-slate-500 mb-1">Max incentive payout</div>${inp('tf-cap','number',tgt?.cap_amount||'')}</div>
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button onclick="saveTgtForm(${tgt?tgt.id:'null'})" class="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-2.5 rounded-xl text-sm font-semibold shadow">Save Target</button>
+        <button onclick="go('targets')" class="px-4 py-2.5 border rounded-xl text-sm text-slate-400" style="border-color:rgba(255,255,255,0.1)">Cancel</button>
+      </div>
+    </div>
+  </div>`;
+}
+function editTarget(id, repName, repType){
+  document.getElementById('app').innerHTML=`
+    ${pageHeader('Edit Target','','')}
+    ${renderTgtForm(id==='null'?null:Number(id), repName, repType)}
+  `;
+}
+function saveTgtForm(existingId){
+  const repName=(document.getElementById('tf-rep').value||'').trim();
+  const repType=document.getElementById('tf-type').value;
+  const fy=document.getElementById('tf-fy').value;
+  const quarter=document.getElementById('tf-q').value;
+  const tgtAmt=parseFloat(document.getElementById('tf-tgt').value)||0;
+  if(!repName||!fy||!quarter||tgtAmt<=0){alert('Rep name, FY, quarter and target amount are required.');return;}
+  let ts=targets().filter(t=>!(t.rep_name===repName&&t.fy===fy&&t.quarter===quarter&&(!existingId||t.id!==existingId)));
+  const thresh=parseFloat(document.getElementById('tf-thresh').value)||0;
+  const accel=parseFloat(document.getElementById('tf-accel').value)||0;
+  const cap=parseFloat(document.getElementById('tf-cap').value)||0;
+  ts.push({
+    id:existingId||uid(ts), rep_name:repName, rep_type:repType, fy, quarter,
+    target_amount:tgtAmt,
+    threshold_pct:thresh||null,
+    accelerator_pct:accel||null,
+    cap_amount:cap||null,
+  });
+  setTargets(ts); toast('Target saved!'); window._selTgtFy=fy; window._selTgtQtr=quarter; go('targets');
+}
+function delTarget(id){
+  if(!confirm('Remove this target?'))return;
+  setTargets(targets().filter(t=>t.id!==id)); toast('Target removed'); go('targets');
+}
+
 function migrateData(){
   // 1. Assign account_code to accounts missing one
   let allA=accs(), aChanged=false;
