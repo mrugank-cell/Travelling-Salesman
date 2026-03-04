@@ -151,6 +151,7 @@
       <button class="nav-btn" data-page="dashboard"     onclick="go('dashboard')">     <span>📊</span> Dashboard</button>
       <button class="nav-btn" data-page="accounts"      onclick="go('accounts')">      <span>🏢</span> Accounts</button>
       <button class="nav-btn" data-page="opportunities" onclick="go('opportunities')"> <span>🎯</span> Opportunities</button>
+      <button class="nav-btn" data-page="invoices"      onclick="go('invoices')">      <span>🧾</span> Invoices</button>
       <button class="nav-btn" data-page="collections"   onclick="go('collections')">   <span>💰</span> Collections</button>
       <button class="nav-btn" data-page="incentives"    onclick="go('incentives')">    <span>🏆</span> Incentives</button>
       <button class="nav-btn" data-page="quarterly"     onclick="go('quarterly')">     <span>📅</span> Quarterly</button>
@@ -183,7 +184,9 @@ const OPEN_ST  = ['Open','Commit','Best Case'];
 const TIERS      = ['Enterprise','Mid-Market','SMB'];
 const HEALTH     = ['Green','Yellow','Red'];
 const RISK       = ['Low','Medium','High'];
-const DEAL_TYPES = ['Regular','Upsell/Cross-sell'];
+const DEAL_TYPES    = ['Regular','Upsell/Cross-sell'];
+const INVOICE_TYPES = ['Subscription','Upsell','Renewal','Services','Adjustment'];
+const INVOICE_ST    = ['open','partial','paid','overdue','cancelled'];
 
 const PALETTE  = ['#6366f1','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#f97316','#ec4899','#84cc16','#3b82f6'];
 const ST_COLOR = { Open:'#3b82f6', Commit:'#8b5cf6', 'Best Case':'#f59e0b', Won:'#10b981', Lost:'#ef4444' };
@@ -229,9 +232,37 @@ const setOpps = v  => ls.set('opps', v);
 const setCols = v  => ls.set('cols', v);
 const setCfg  = v  => ls.set('cfg', v);
 const setAccs = v  => ls.set('accs', v);
-const uid     = a  => a.length ? Math.max(...a.map(x=>x.id))+1 : 1;
+const uid     = a  => a.length ? a.reduce((mx,x)=>Math.max(mx,Number(x.id)||0),0)+1 : 1;
 const csmScores    = () => ls.get('csm_scores', []);
 const setCsmScores = v  => ls.set('csm_scores', v);
+const invs         = () => ls.get('invs', []);
+const setInvs      = v  => ls.set('invs', v);
+
+function nextAccCode(){
+  const all=accs();
+  const nums=all.map(a=>{const m=a.account_code?.match(/(\d+)$/);return m?parseInt(m[1]):0;});
+  const next=nums.length?Math.max(0,...nums)+1:1;
+  return 'ACC-'+String(next).padStart(3,'0');
+}
+function nextInvNum(){
+  const all=invs();
+  const nums=all.map(i=>{const m=i.invoice_number?.match(/(\d+)$/);return m?parseInt(m[1]):0;});
+  const next=nums.length?Math.max(0,...nums)+1:1;
+  return 'INV-'+String(next).padStart(4,'0');
+}
+function getAccById(id){return accs().find(a=>a.id===Number(id));}
+function invCollected(invId){return cols().filter(c=>c.invoice_id===Number(invId)).reduce((s,c)=>s+(c.regular_amount||0)+(c.upsell_amount||0),0);}
+function invOutstanding(inv){return Math.max(0,(inv.net_amount||0)-invCollected(inv.id));}
+function invStatusCalc(inv){
+  const out=invOutstanding(inv);
+  if(inv.status==='cancelled')return 'cancelled';
+  if(out<=0)return 'paid';
+  const due=inv.due_date?new Date(inv.due_date):null;
+  const today=new Date();today.setHours(0,0,0,0);
+  if(due&&due<today)return 'overdue';
+  if(invCollected(inv.id)>0)return 'partial';
+  return 'open';
+}
 
 // ═══════════════════════════════════════════════════
 //  FY + ENRICHMENT HELPERS
@@ -279,15 +310,15 @@ function go(p, filter=null){
   if(filter) window._pageFilter=filter;
   page=p; oppMode='list'; colMode='list'; accMode='list';
   Object.values(charts).forEach(c=>c.destroy()); charts={};
+  const navPage=p==='acc360'?'accounts':p;
   document.querySelectorAll('.nav-btn').forEach(b=>{
-    const isActive=b.dataset.page===p;
-    b.classList.toggle('active',isActive);
+    b.classList.toggle('active',b.dataset.page===navPage);
   });
   render();
 }
 function render(){
   document.getElementById('app').innerHTML='';
-  ({dashboard,accounts,opportunities,collections,incentives,quarterly,reports,settings})[page]();
+  ({dashboard,accounts,opportunities,invoices,collections,incentives,quarterly,reports,settings,acc360})[page]();
 }
 
 // Chart.js global defaults
@@ -387,6 +418,11 @@ function tierBadge(t){
   const m={Enterprise:'bg-violet-100 text-violet-700 border-violet-200','Mid-Market':'bg-blue-100 text-blue-700 border-blue-200',SMB:'bg-slate-100 text-slate-600 border-slate-200'};
   return t?`<span class="px-2.5 py-0.5 rounded-full text-xs font-semibold border ${m[t]||'bg-slate-100 text-slate-500 border-slate-200'}">${t}</span>`:'<span class="text-slate-300">—</span>';
 }
+function invStatusBadge(s){
+  const m={open:'bg-blue-100 text-blue-700 border-blue-200',partial:'bg-amber-100 text-amber-700 border-amber-200',paid:'bg-emerald-100 text-emerald-700 border-emerald-200',overdue:'bg-red-100 text-red-700 border-red-200',cancelled:'bg-slate-100 text-slate-500 border-slate-200'};
+  const label=(s||'open').charAt(0).toUpperCase()+(s||'open').slice(1);
+  return `<span class="px-2.5 py-0.5 rounded-full text-xs font-semibold border ${m[s]||m.open}">${label}</span>`;
+}
 
 // ═══════════════════════════════════════════════════
 //  DASHBOARD
@@ -406,12 +442,14 @@ function dashboard(){
 
     ${allA.length ? `
     ${sectionHead('Account Book','🏢')}
-    <div class="grid grid-cols-4 gap-4 mb-6">
+    <div class="grid grid-cols-4 gap-4 mb-4">
       ${mc('Total ARR',inr(totalARR),`${allA.length} accounts`,0,"go('accounts')")}
       ${mc('Monthly MRR',inr(totalARR/12),'Annualised ÷ 12',1,"go('accounts')")}
       ${mc('At-Risk Accounts',atRisk.length,'High churn or Critical',4,"go('accounts',{risk:'High'})")}
       ${mc('Renewing in 90d',upcoming.length,inr(upcoming.reduce((s,a)=>s+a.arr,0))+' ARR',3,"go('accounts',{renew:'90'})")}
-    </div>` : ''}
+    </div>
+    ${(()=>{const allI=invs();const totInv=allI.reduce((s,i)=>s+(i.net_amount||0),0);const totOut=allI.reduce((s,i)=>s+invOutstanding(i),0);const overdue=allI.filter(i=>invStatusCalc(i)==='overdue').length;return allI.length?`<div class="grid grid-cols-3 gap-4 mb-6">${mc('Total Invoiced',inr(totInv),allI.length+' invoices',1,"go('invoices')")}${mc('Outstanding',inr(totOut),'Unpaid balance',3,"go('invoices')")}${mc('Overdue Invoices',overdue,'Past due date',4,"go('invoices')")} </div>`:'';})()}
+    ` : ''}
 
     ${sectionHead('Pipeline','🎯')}
     <div class="grid grid-cols-4 gap-4 mb-6">
@@ -543,9 +581,10 @@ function filterAccs(){
     : `<div class="card overflow-hidden">
       <div class="overflow-x-auto">
       <table class="w-full text-sm dt min-w-[1000px]">
-        <thead class="bg-slate-50 border-b border-slate-100">${thRow(['Account','AM','CSM','ARR / MRR','Product','Renewal','Health','Risk','Tier',''])}</thead>
+        <thead class="bg-slate-50 border-b border-slate-100">${thRow(['Code','Account','AM','CSM','ARR / MRR','Product','Renewal','Health','Risk',''])}</thead>
         <tbody class="divide-y divide-slate-50">
-          ${data.map(a=>`<tr>
+          ${data.map(a=>`<tr class="cursor-pointer hover:bg-white/2" onclick="goAcc360(${a.id})">
+            <td class="px-4 py-3 text-xs font-mono text-slate-400">${a.account_code||'—'}</td>
             <td class="px-4 py-3 font-semibold text-slate-800 max-w-[160px] truncate">${a.account_name}</td>
             <td class="px-4 py-3 text-slate-500 text-xs">${a.am_name}</td>
             <td class="px-4 py-3 text-slate-500 text-xs">${a.csm_name}</td>
@@ -558,19 +597,18 @@ function filterAccs(){
             </td>
             <td class="px-4 py-3">${healthBadge(a.health_score)}</td>
             <td class="px-4 py-3">${riskBadge(a.churn_risk)}</td>
-            <td class="px-4 py-3">${tierBadge(a.account_tier)}</td>
-            <td class="px-4 py-3 whitespace-nowrap">
-              <button onclick="createOppFromAcc(${a.id})" class="text-emerald-600 hover:underline text-xs mr-2" title="Create renewal opportunity">→ Opp</button>
-              <button onclick="startEditAcc(${a.id})" class="text-indigo-500 hover:underline text-xs mr-2">Edit</button>
+            <td class="px-4 py-3 whitespace-nowrap" onclick="event.stopPropagation()">
+              <button onclick="goAcc360(${a.id})" class="text-indigo-400 hover:underline text-xs mr-2">View</button>
+              <button onclick="startEditAcc(${a.id})" class="text-slate-400 hover:underline text-xs mr-2">Edit</button>
               <button onclick="delAcc(${a.id})" class="text-red-400 hover:underline text-xs">Del</button>
             </td>
           </tr>`).join('')}
         </tbody>
         <tfoot class="bg-slate-50 border-t border-slate-100">
           <tr>
-            <td colspan="3" class="px-4 py-3 text-xs text-slate-400">${data.length} account${data.length!==1?'s':''}</td>
+            <td colspan="4" class="px-4 py-3 text-xs text-slate-400">${data.length} account${data.length!==1?'s':''}</td>
             <td class="px-4 py-3 font-bold text-slate-700">${inr(total)}</td>
-            <td colspan="6"></td>
+            <td colspan="5"></td>
           </tr>
         </tfoot>
       </table>
@@ -595,7 +633,8 @@ function renderAccForm(){
       <button onclick="accMode='list';render()" class="text-xs text-slate-400 hover:text-slate-600">← Back</button>
     </div>
     <div class="space-y-4">
-      ${frow(lbl('Account Name *')+inp('a-name','text',a?.account_name||''), lbl('Product *')+inp('a-product','text',a?.product||''))}
+      ${frow(lbl('Account Name *')+inp('a-name','text',a?.account_name||''), lbl('Account Code')+inp('a-code','text',a?.account_code||'','','placeholder="Auto-generated (e.g. ACC-001)"'))}
+      ${frow(lbl('Product *')+inp('a-product','text',a?.product||''), lbl('Notes')+inp('a-notes','text',a?.notes||'','','placeholder="Optional"'))}
       ${frow(
         lbl('AM Name *')+(amReps.length?sel('a-am',[{v:'',l:'Select AM'},...amReps.map(n=>({v:n,l:n}))],a?.am_name||''):inp('a-am','text',a?.am_name||'')),
         lbl('CSM Name *')+(csmReps.length?sel('a-csm',[{v:'',l:'Select CSM'},...csmReps.map(n=>({v:n,l:n}))],a?.csm_name||''):inp('a-csm','text',a?.csm_name||''))
@@ -607,7 +646,7 @@ function renderAccForm(){
       )}
       ${frow(
         lbl('Churn Risk')+sel('a-risk',[{v:'',l:'Select risk'},...RISK.map(r=>({v:r,l:r}))],a?.churn_risk||''),
-        lbl('Notes')+inp('a-notes','text',a?.notes||'','','placeholder="Optional"')
+        lbl('Billing Frequency')+sel('a-freq',[{v:'',l:'Select'},{v:'monthly',l:'Monthly'},{v:'quarterly',l:'Quarterly'},{v:'annual',l:'Annual'}],a?.billing_frequency||'')
       )}
     </div>
     <div class="flex gap-3 mt-6">
@@ -625,14 +664,23 @@ function saveAcc(eid){
   const arr=parseFloat(document.getElementById('a-arr').value);
   const renewal=document.getElementById('a-renewal').value;
   if(!name||!am||!csm||isNaN(arr)||!renewal){alert('Fill in all required fields.');return;}
+  const codeInput=(document.getElementById('a-code')?.value||'').trim();
   const rec={account_name:name,am_name:am,csm_name:csm,arr,product,renewal_date:renewal,
     account_tier:document.getElementById('a-tier').value||'',
     health_score:document.getElementById('a-health').value||'',
     churn_risk:document.getElementById('a-risk').value||'',
+    billing_frequency:document.getElementById('a-freq')?.value||'',
     notes:document.getElementById('a-notes').value.trim()};
   let data=accs();
-  if(eid!==null){data=data.map(a=>a.id===eid?{...a,...rec}:a);}
-  else{rec.id=uid(data);data.push(rec);}
+  if(eid!==null){
+    const existing=data.find(a=>a.id===eid);
+    rec.account_code=codeInput||existing?.account_code||nextAccCode();
+    data=data.map(a=>a.id===eid?{...a,...rec}:a);
+  } else {
+    rec.id=uid(data);
+    rec.account_code=codeInput||nextAccCode();
+    data.push(rec);
+  }
   setAccs(data); accMode='list'; toast(eid?'Account updated':'Account added'); go('accounts');
 }
 
@@ -760,8 +808,8 @@ function executeImport(){
       churn_risk:mapping.churn_risk?row[mapping.churn_risk]||'':'',
       notes:mapping.notes?row[mapping.notes]||'':''};
   }).filter(Boolean);
-  const maxId=existing.length?Math.max(...existing.map(a=>a.id)):0;
-  imported.forEach((a,i)=>{a.id=maxId+i+1;});
+  const maxId=existing.length?existing.reduce((mx,a)=>Math.max(mx,Number(a.id)||0),0):0;
+  imported.forEach((a,i)=>{a.id=maxId+i+1; if(!a.account_code){const nums=[...existing,...imported.slice(0,i)].map(x=>{const m=x.account_code?.match(/(\d+)$/);return m?parseInt(m[1]):0;});a.account_code='ACC-'+String(Math.max(0,...nums)+1).padStart(3,'0');}});
   setAccs([...existing,...imported]);
   csvParsed=null; csvMapping={};
   toast(`Imported ${added} accounts`); accMode='list'; go('accounts');
@@ -1057,6 +1105,171 @@ function renderReportCharts(){
 }
 
 // ═══════════════════════════════════════════════════
+//  INVOICES
+// ═══════════════════════════════════════════════════
+function invoices(){
+  document.getElementById('app').innerHTML=`
+    ${pageHeader('Invoices','Billing records linked to accounts',`
+      <div class="flex gap-2 flex-wrap">
+        <button onclick="downloadInvTemplate()" class="border text-slate-400 hover:bg-white/5 text-sm font-medium px-3 py-2 rounded-xl transition" style="border-color:rgba(255,255,255,0.1)">↓ Template</button>
+        <button onclick="downloadInvsCSV()" class="border text-emerald-400 hover:bg-emerald-500/10 text-sm font-medium px-3 py-2 rounded-xl transition" style="border-color:rgba(16,185,129,0.35)">↓ Export</button>
+        <button onclick="page='invoices';accMode='add';render()" class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold px-4 py-2 rounded-xl shadow shadow-indigo-900/40">+ Add Invoice</button>
+      </div>`
+    )}
+    <div id="inv-body"></div>
+  `;
+  if(accMode==='add') renderInvForm();
+  else if(accMode==='edit') renderInvForm(window._invEditId);
+  else renderInvList();
+}
+function renderInvList(){
+  const all=invs(), allA=accs();
+  const totInv=all.reduce((s,i)=>s+(i.net_amount||0),0);
+  const totColl=all.reduce((s,i)=>s+invCollected(i.id),0);
+  const totOut=all.reduce((s,i)=>s+invOutstanding(i),0);
+  const overdue=all.filter(i=>invStatusCalc(i)==='overdue').length;
+  const years=[...new Set(all.map(i=>i.invoice_date?.slice(0,4)).filter(Boolean))].sort().reverse();
+  const ams=[...new Set(allA.map(a=>a.am_name).filter(Boolean))].sort();
+  document.getElementById('inv-body').innerHTML=`
+    <div class="grid grid-cols-4 gap-4 mb-5">
+      ${mc('Total Invoiced',inr(totInv),`${all.length} invoices`,0)}
+      ${mc('Total Collected',inr(totColl),'Payments received',1)}
+      ${mc('Outstanding',inr(totOut),'Unpaid balance',3)}
+      ${mc('Overdue',overdue,'Past due date',4)}
+    </div>
+    <div class="flex flex-wrap gap-2 mb-4">
+      ${sel('if-acc',[{v:'',l:'All Accounts'},...allA.map(a=>({v:a.id,l:`${a.account_code||''} ${a.account_name}`}))], '', 'w-auto')}
+      ${sel('if-type',[{v:'',l:'All Types'},...INVOICE_TYPES.map(t=>({v:t,l:t}))], '', 'w-auto')}
+      ${sel('if-st',[{v:'',l:'All Status'},...INVOICE_ST.map(s=>({v:s,l:s.charAt(0).toUpperCase()+s.slice(1)}))], '', 'w-auto')}
+      ${sel('if-yr',[{v:'',l:'All Years'},...years.map(y=>({v:y,l:y}))], '', 'w-auto')}
+    </div>
+    <div id="inv-tbl"></div>
+  `;
+  ['if-acc','if-type','if-st','if-yr'].forEach(id=>document.getElementById(id).onchange=filterInvs);
+  filterInvs();
+}
+function filterInvs(){
+  const accId=document.getElementById('if-acc').value;
+  const type=document.getElementById('if-type').value;
+  const st=document.getElementById('if-st').value;
+  const yr=document.getElementById('if-yr').value;
+  let data=invs();
+  if(accId) data=data.filter(i=>String(i.account_id)===String(accId));
+  if(type)  data=data.filter(i=>i.invoice_type===type);
+  if(yr)    data=data.filter(i=>i.invoice_date?.startsWith(yr));
+  if(st)    data=data.filter(i=>invStatusCalc(i)===st);
+  const allA=accs();
+  document.getElementById('inv-tbl').innerHTML=data.length===0
+    ? card(emptyState('No invoices found. Add one or import from CSV.'),'p-4')
+    : `<div class="card overflow-hidden">
+      <div class="overflow-x-auto">
+      <table class="w-full text-sm dt min-w-[960px]">
+        <thead class="bg-slate-50 border-b border-slate-100">${thRow(['Invoice No','Account','Type','Invoice Date','Due Date','Amount','Collected','Outstanding','Status',''])}</thead>
+        <tbody class="divide-y divide-slate-50">
+          ${data.map(i=>{
+            const acc=allA.find(a=>a.id===i.account_id);
+            const coll=invCollected(i.id);
+            const out=invOutstanding(i);
+            const st=invStatusCalc(i);
+            return `<tr>
+              <td class="px-4 py-3 font-mono text-xs text-slate-400">${i.invoice_number}</td>
+              <td class="px-4 py-3">
+                ${acc?`<button onclick="goAcc360(${acc.id})" class="font-semibold text-slate-800 hover:text-indigo-400 text-left">${acc.account_name}</button><p class="text-xs text-slate-400">${acc.account_code||''}</p>`:'<span class="text-slate-400">—</span>'}
+              </td>
+              <td class="px-4 py-3 text-xs text-slate-500">${i.invoice_type||'—'}</td>
+              <td class="px-4 py-3 text-xs text-slate-500">${i.invoice_date||'—'}</td>
+              <td class="px-4 py-3 text-xs ${st==='overdue'?'text-red-400 font-semibold':'text-slate-500'}">${i.due_date||'—'}</td>
+              <td class="px-4 py-3 font-semibold text-slate-800">${inr(i.net_amount||0)}</td>
+              <td class="px-4 py-3 text-emerald-400 font-semibold">${coll>0?inr(coll):'—'}</td>
+              <td class="px-4 py-3 font-bold ${out>0?'text-amber-400':'text-emerald-400'}">${inr(out)}</td>
+              <td class="px-4 py-3">${invStatusBadge(st)}</td>
+              <td class="px-4 py-3 whitespace-nowrap">
+                <button onclick="window._invEditId=${i.id};accMode='edit';render()" class="text-slate-400 hover:underline text-xs mr-2">Edit</button>
+                <button onclick="delInv(${i.id})" class="text-red-400 hover:underline text-xs">Del</button>
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+        <tfoot class="bg-slate-50 border-t border-slate-100"><tr>
+          <td colspan="5" class="px-4 py-3 text-xs text-slate-400">${data.length} invoice${data.length!==1?'s':''}</td>
+          <td class="px-4 py-3 font-bold text-slate-700">${inr(data.reduce((s,i)=>s+(i.net_amount||0),0))}</td>
+          <td class="px-4 py-3 font-bold text-emerald-400">${inr(data.reduce((s,i)=>s+invCollected(i.id),0))}</td>
+          <td class="px-4 py-3 font-bold text-amber-400">${inr(data.reduce((s,i)=>s+invOutstanding(i),0))}</td>
+          <td colspan="2"></td>
+        </tr></tfoot>
+      </table>
+      </div>
+    </div>`;
+}
+function delInv(id){
+  if(!confirm('Delete this invoice?'))return;
+  setInvs(invs().filter(i=>i.id!==id)); toast('Invoice deleted'); render();
+}
+function renderInvForm(eid=null){
+  const inv=eid?invs().find(i=>i.id===eid):null;
+  const allA=accs();
+  const now=new Date();
+  const defDue=new Date(now); defDue.setDate(defDue.getDate()+15);
+  const fmt=d=>d.toISOString().slice(0,10);
+  document.getElementById('inv-body').innerHTML=card(`
+    <div class="flex items-center justify-between mb-5">
+      <h2 class="text-base font-bold text-slate-800">${eid?'Edit Invoice':'New Invoice'}</h2>
+      <button onclick="accMode='list';render()" class="text-xs text-slate-400 hover:text-slate-600">← Back</button>
+    </div>
+    ${allA.length===0?`<div class="rounded-xl p-3 mb-4 text-sm" style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.25);color:#fcd34d">⚠️ Add accounts first before creating invoices.</div>`:''}
+    <div class="space-y-4">
+      ${frow(
+        lbl('Invoice Number')+inp('iv-num','text',inv?.invoice_number||nextInvNum(),'','placeholder="INV-0001"'),
+        lbl('Invoice Type *')+sel('iv-type',[{v:'',l:'Select type'},...INVOICE_TYPES.map(t=>({v:t,l:t}))],inv?.invoice_type||'')
+      )}
+      <div>${lbl('Account *')}${sel('iv-acc',[{v:'',l:'Select account'},...allA.map(a=>({v:a.id,l:`${a.account_code||''} — ${a.account_name}`}))],inv?.account_id||'','w-full')}</div>
+      ${frow(lbl('Invoice Date *')+inp('iv-date','date',inv?.invoice_date||fmt(now)), lbl('Due Date *')+inp('iv-due','date',inv?.due_date||fmt(defDue)))}
+      ${frow(lbl('Net Amount (₹) *')+inp('iv-net','number',inv?.net_amount||'','','placeholder="0" min="0"'), lbl('Tax Amount (₹)')+inp('iv-tax','number',inv?.tax_amount||0,'','placeholder="0" min="0"'))}
+      ${frow(lbl('Billing Period Start')+inp('iv-bps','date',inv?.billing_period_start||''), lbl('Billing Period End')+inp('iv-bpe','date',inv?.billing_period_end||''))}
+      <div>${lbl('Notes')}${inp('iv-notes','text',inv?.notes||'','w-full','placeholder="Optional"')}</div>
+    </div>
+    <div class="flex gap-3 mt-5">
+      <button onclick="saveInv(${eid||'null'})" class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-5 py-2 rounded-xl text-sm font-semibold shadow shadow-indigo-900/40">${eid?'Save Changes':'Add Invoice'}</button>
+      <button onclick="accMode='list';render()" class="border text-slate-400 hover:bg-white/5 px-5 py-2 rounded-xl text-sm transition" style="border-color:rgba(255,255,255,0.1)">Cancel</button>
+    </div>
+  `,'p-6');
+}
+function saveInv(eid){
+  const num=(document.getElementById('iv-num').value||'').trim();
+  const accId=parseInt(document.getElementById('iv-acc').value);
+  const type=document.getElementById('iv-type').value;
+  const date=document.getElementById('iv-date').value;
+  const due=document.getElementById('iv-due').value;
+  const net=parseFloat(document.getElementById('iv-net').value)||0;
+  const tax=parseFloat(document.getElementById('iv-tax').value)||0;
+  if(!num||!accId||!type||!date||!due||net<=0){alert('Fill in all required fields.');return;}
+  const rec={invoice_number:num,account_id:accId,invoice_type:type,invoice_date:date,due_date:due,
+    gross_amount:net+tax,tax_amount:tax,net_amount:net,
+    billing_period_start:document.getElementById('iv-bps').value||null,
+    billing_period_end:document.getElementById('iv-bpe').value||null,
+    notes:document.getElementById('iv-notes').value.trim()};
+  let data=invs();
+  if(eid!==null){data=data.map(i=>i.id===eid?{...i,...rec}:i);}
+  else{rec.id=uid(data);data.push(rec);}
+  setInvs(data); accMode='list'; toast(eid?'Invoice updated':'Invoice added'); go('invoices');
+}
+function downloadInvTemplate(){
+  const h=['Invoice Number','Account Code','Invoice Type','Invoice Date','Due Date','Net Amount','Tax Amount','Billing Period Start','Billing Period End','Notes'];
+  const r=[['INV-0001','ACC-001','Subscription','2026-04-01','2026-04-15','1200000','0','2026-04-01','2027-03-31','FY26 renewal'],
+    ['INV-0002','ACC-002','Upsell','2026-04-01','2026-04-10','400000','72000','2026-04-01','2027-03-31','Q1 upsell']];
+  const csv=[h,...r].map(row=>row.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='invoices_template.csv';a.click();
+}
+function downloadInvsCSV(){
+  const data=invs(); if(!data.length){toast('No invoices to export.');return;}
+  const allA=accs();
+  downloadCSV('invoices.csv',
+    ['Invoice Number','Account Code','Account Name','Type','Invoice Date','Due Date','Net Amount','Tax Amount','Collected','Outstanding','Status'],
+    data.map(i=>{const acc=allA.find(a=>a.id===i.account_id);return[i.invoice_number,acc?.account_code||'',acc?.account_name||'',i.invoice_type,i.invoice_date,i.due_date,i.net_amount,i.tax_amount||0,invCollected(i.id),invOutstanding(i),invStatusCalc(i)];})
+  );
+}
+
+// ═══════════════════════════════════════════════════
 //  OPPORTUNITIES
 // ═══════════════════════════════════════════════════
 function opportunities(){
@@ -1227,14 +1440,16 @@ function filterCols(){
     : `<div class="card overflow-hidden">
       <div class="overflow-x-auto">
       <table class="w-full text-sm dt min-w-[860px]">
-        <thead class="bg-slate-50 border-b border-slate-100">${thRow(['Customer','AM','CSM','Regular Amt','Upsell Amt','Invoice Total','Period',''])}</thead>
+        <thead class="bg-slate-50 border-b border-slate-100">${thRow(['Invoice No','Customer','AM','CSM','Regular Amt','Upsell Amt','Total','Period',''])}</thead>
         <tbody class="divide-y divide-slate-50">
           ${data.map(c=>{
             const reg=c.regular_amount??c.amount??0;
             const ups=c.upsell_amount??0;
             const amN=c.am_name||c.rep_name||'—';
             const csmN=c.csm_name||'—';
+            const inv2=c.invoice_id?invs().find(i=>i.id===c.invoice_id):null;
             return `<tr>
+              <td class="px-4 py-3 font-mono text-xs text-slate-400">${inv2?`<button onclick="window._invEditId=${inv2.id};page='invoices';accMode='edit';render()" class="hover:text-indigo-400">${inv2.invoice_number}</button>`:'—'}</td>
               <td class="px-4 py-3 font-semibold text-slate-800">${c.customer_name||'—'}</td>
               <td class="px-4 py-3 text-slate-500 text-xs">${amN}</td>
               <td class="px-4 py-3 text-slate-500 text-xs">${csmN}</td>
@@ -1247,7 +1462,7 @@ function filterCols(){
           }).join('')}
         </tbody>
         <tfoot class="bg-slate-50 border-t border-slate-100"><tr>
-          <td colspan="3" class="px-4 py-3 text-xs text-slate-400">${data.length} entr${data.length!==1?'ies':'y'}</td>
+          <td colspan="4" class="px-4 py-3 text-xs text-slate-400">${data.length} entr${data.length!==1?'ies':'y'}</td>
           <td class="px-4 py-3 font-bold" style="color:#6ee7b7">${inr(totReg)}</td>
           <td class="px-4 py-3 font-bold" style="color:#fcd34d">${inr(totUps)}</td>
           <td class="px-4 py-3 font-bold text-slate-800">${inr(totReg+totUps)}</td>
@@ -1264,41 +1479,124 @@ function renderColForm(){
   const c=cfg(), reps=c.reps||[], now=new Date();
   const amReps=reps.filter(r=>r.type==='AM');
   const csmReps=reps.filter(r=>r.type==='CSM');
+  const allA=accs();
   document.getElementById('col-body').innerHTML=card(`
     <div class="flex items-center justify-between mb-5">
       <h2 class="text-base font-bold text-slate-800">Add Collection Entry</h2>
       <button onclick="colMode='list';render()" class="text-xs text-slate-400 hover:text-slate-600">← Back</button>
     </div>
-    ${reps.length===0?`<div class="rounded-xl p-3 mb-4 text-sm" style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.25);color:#fcd34d">⚠️ Add reps in <button onclick="go('settings')" class="underline font-medium">Settings</button> first.</div>`:''}
+    ${allA.length===0?`<div class="rounded-xl p-3 mb-4 text-sm" style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.25);color:#fcd34d">⚠️ Add accounts and invoices first.</div>`:''}
     <div class="space-y-4">
-      <div>${lbl('Customer Name *')}${inp('c-cust','text','','w-full','placeholder="e.g. Reliance Jio"')}</div>
+      <div>
+        ${lbl('Account *')}
+        ${sel('c-acc',[{v:'',l:'Select account'},...allA.map(a=>({v:a.id,l:`${a.account_code||''} — ${a.account_name}`}))],'','w-full')}
+      </div>
+      <div>
+        ${lbl('Invoice *')}
+        <select id="c-inv" class="w-full border border-slate-200 bg-slate-50 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 transition" onchange="onColInvChange()">
+          <option value="">Select account first</option>
+        </select>
+      </div>
+      <div id="c-inv-details"></div>
       ${frow(
-        lbl('AM Name *')+sel('c-am',amReps.map(r=>({v:r.name,l:r.name})),''),
-        lbl('CSM Name *')+sel('c-csm',csmReps.map(r=>({v:r.name,l:r.name})),'')
+        lbl('AM Name *')+sel('c-am',[{v:'',l:'Select AM'},...amReps.map(r=>({v:r.name,l:r.name}))],''),
+        lbl('CSM Name *')+sel('c-csm',[{v:'',l:'Select CSM'},...csmReps.map(r=>({v:r.name,l:r.name}))],'')
       )}
       ${frow(lbl('Regular Amount (₹)')+inp('c-reg','number','0','','min="0" placeholder="0"'), lbl('Upsell/Cross-sell Amount (₹)')+inp('c-ups','number','0','','min="0" placeholder="0"'))}
-      ${frow(lbl('Month *')+sel('c-month',MONTHS.map(m=>({v:m,l:m})),MONTHS[now.getMonth()]), lbl('Year *')+inp('c-year','number',now.getFullYear()))}
+      ${frow(lbl('Collection Date *')+inp('c-date','date',new Date().toISOString().slice(0,10)), lbl('Month')+sel('c-month',MONTHS.map(m=>({v:m,l:m})),MONTHS[now.getMonth()]))}
+      <div>${lbl('Year')}${inp('c-year','number',now.getFullYear())}</div>
     </div>
-    <p class="text-xs text-slate-500 mt-3">Invoice Amount = Regular + Upsell. Both AM and CSM earn incentives on each invoice.</p>
+    <p class="text-xs text-slate-500 mt-3">Both AM and CSM earn incentives on the same invoice. Regular + Upsell = total collected.</p>
     <div class="flex gap-3 mt-4">
       <button onclick="saveCol()" class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-5 py-2 rounded-xl text-sm font-semibold shadow shadow-indigo-900/40">Add Entry</button>
       <button onclick="colMode='list';render()" class="border text-slate-400 hover:bg-white/5 px-5 py-2 rounded-xl text-sm transition" style="border-color:rgba(255,255,255,0.1)">Cancel</button>
     </div>
   `,'p-6');
+  document.getElementById('c-acc').onchange=onColAccChange;
+  // Pre-fill if coming from account 360
+  if(window._preColAccId){
+    document.getElementById('c-acc').value=window._preColAccId;
+    window._preColAccId=null;
+    onColAccChange();
+  }
+}
+function onColAccChange(){
+  const accId=parseInt(document.getElementById('c-acc').value);
+  const accInvs=invs().filter(i=>i.account_id===accId);
+  const sel2=document.getElementById('c-inv');
+  sel2.innerHTML='<option value="">'+( accInvs.length?'Select invoice':'No invoices for this account — add one first')+'</option>'+
+    accInvs.map(i=>{
+      const out=invOutstanding(i);
+      return `<option value="${i.id}">${i.invoice_number} — ${inr(i.net_amount)} (Outs: ${inr(out)})</option>`;
+    }).join('');
+  document.getElementById('c-inv-details').innerHTML='';
+  // Auto-fill AM/CSM from account
+  const acc=accs().find(a=>a.id===accId);
+  if(acc){
+    const amSel=document.getElementById('c-am'), csmSel=document.getElementById('c-csm');
+    if(amSel)  [...amSel.options].forEach(o=>{if(o.value===acc.am_name)o.selected=true;});
+    if(csmSel) [...csmSel.options].forEach(o=>{if(o.value===acc.csm_name)o.selected=true;});
+  }
+}
+function onColInvChange(){
+  const invId=parseInt(document.getElementById('c-inv').value);
+  const inv=invs().find(i=>i.id===invId);
+  if(!inv){document.getElementById('c-inv-details').innerHTML='';return;}
+  const coll=invCollected(invId);
+  const out=invOutstanding(inv);
+  // Auto-fill month/year from invoice_date
+  if(inv.invoice_date){
+    const d=new Date(inv.invoice_date);
+    const mSel=document.getElementById('c-month');
+    if(mSel) mSel.value=MONTHS[d.getMonth()];
+    const yInp=document.getElementById('c-year');
+    if(yInp) yInp.value=d.getFullYear();
+  }
+  document.getElementById('c-inv-details').innerHTML=`
+    <div class="grid grid-cols-3 gap-3">
+      <div class="rounded-xl p-3" style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08)">
+        <p class="text-[10px] text-slate-400 uppercase tracking-wider">Invoice Amount</p>
+        <p class="text-sm font-bold text-slate-200 mt-1">${inr(inv.net_amount)}</p>
+      </div>
+      <div class="rounded-xl p-3" style="background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.15)">
+        <p class="text-[10px] text-slate-400 uppercase tracking-wider">Collected</p>
+        <p class="text-sm font-bold text-emerald-400 mt-1">${inr(coll)}</p>
+      </div>
+      <div class="rounded-xl p-3" style="background:${out<=0?'rgba(16,185,129,0.06)':'rgba(245,158,11,0.06)'};border:1px solid ${out<=0?'rgba(16,185,129,0.15)':'rgba(245,158,11,0.2)'}">
+        <p class="text-[10px] text-slate-400 uppercase tracking-wider">Outstanding</p>
+        <p class="text-sm font-bold ${out<=0?'text-emerald-400':'text-amber-400'} mt-1">${inr(out)}</p>
+      </div>
+    </div>`;
 }
 
 function saveCol(){
-  const cust=document.getElementById('c-cust').value.trim();
+  const accId=parseInt(document.getElementById('c-acc')?.value)||null;
+  const invId=parseInt(document.getElementById('c-inv')?.value)||null;
   const amName=document.getElementById('c-am').value;
   const csmName=document.getElementById('c-csm').value;
   const reg=parseFloat(document.getElementById('c-reg').value)||0;
   const ups=parseFloat(document.getElementById('c-ups').value)||0;
   const month=document.getElementById('c-month').value, yr=parseInt(document.getElementById('c-year').value);
-  if(!cust){alert('Customer Name is required.');return;}
+  const collDate=document.getElementById('c-date')?.value||new Date().toISOString().slice(0,10);
   if(!amName||!csmName){alert('Both AM and CSM are required.');return;}
   if(reg<=0&&ups<=0){alert('Enter at least one amount (Regular or Upsell).');return;}
+  const acc=accId?accs().find(a=>a.id===accId):null;
+  const inv=invId?invs().find(i=>i.id===invId):null;
   const data=cols();
-  data.push({id:uid(data),customer_name:cust,am_name:amName,csm_name:csmName,invoice_amount:reg+ups,regular_amount:reg,upsell_amount:ups,month,year:yr});
+  data.push({
+    id:uid(data),
+    account_id:accId||null,
+    invoice_id:invId||null,
+    customer_name:acc?.account_name||'',
+    am_name:amName,
+    csm_name:csmName,
+    invoice_amount:reg+ups,
+    regular_amount:reg,
+    upsell_amount:ups,
+    collection_date:collDate,
+    month,
+    year:yr
+  });
   setCols(data); colMode='list'; toast('Collection added'); go('collections');
 }
 
@@ -1451,6 +1749,230 @@ function downloadColTemplate(){
   ];
   const csv=[h,...r].map(row=>row.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download='collections_template.csv'; a.click();
+}
+
+// ═══════════════════════════════════════════════════
+//  ACCOUNT 360
+// ═══════════════════════════════════════════════════
+function goAcc360(id){
+  window._acc360Id=Number(id);
+  window._acc360Tab='overview';
+  go('acc360');
+}
+function acc360(){
+  const acc=accs().find(a=>a.id===window._acc360Id);
+  if(!acc){go('accounts');return;}
+  const ea=enrichAcc(acc);
+  const accInvs=invs().filter(i=>i.account_id===acc.id);
+  const accCols=cols().filter(c=>c.account_id===acc.id||(c.invoice_id&&accInvs.some(i=>i.id===c.invoice_id)));
+  const accOpps=opps().filter(o=>o.account_id===acc.id||o.client_name===acc.account_name);
+  const totInv=accInvs.reduce((s,i)=>s+(i.net_amount||0),0);
+  const totColl=accCols.reduce((s,c)=>s+(c.regular_amount||0)+(c.upsell_amount||0),0);
+  const totOut=accInvs.reduce((s,i)=>s+invOutstanding(i),0);
+  const openPipe=accOpps.filter(o=>OPEN_ST.includes(o.status)).reduce((s,o)=>s+o.value,0);
+  const tab=window._acc360Tab||'overview';
+  const tabs=[
+    {k:'overview',l:'Overview'},
+    {k:'opps',l:`Opportunities (${accOpps.length})`},
+    {k:'invoices',l:`Invoices (${accInvs.length})`},
+    {k:'collections',l:`Collections (${accCols.length})`},
+    {k:'incentives',l:'Incentives'},
+  ];
+  document.getElementById('app').innerHTML=`
+    <div class="flex items-center gap-3 mb-5">
+      <button onclick="go('accounts')" class="text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1">← Accounts</button>
+      <span class="text-slate-600">/</span>
+      <span class="text-sm text-slate-300 font-medium">${acc.account_name}</span>
+    </div>
+    <div class="card p-5 mb-5">
+      <div class="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <div class="flex items-center gap-3 mb-1">
+            <h1 class="text-2xl font-extrabold text-slate-100">${acc.account_name}</h1>
+            <span class="font-mono text-xs px-2 py-0.5 rounded" style="background:rgba(255,255,255,0.07);color:#94a3b8">${acc.account_code||'—'}</span>
+            ${tierBadge(acc.account_tier)}
+            ${healthBadge(acc.health_score)}
+          </div>
+          <p class="text-sm text-slate-400">AM: <span class="text-slate-300 font-medium">${acc.am_name}</span> &nbsp;·&nbsp; CSM: <span class="text-slate-300 font-medium">${acc.csm_name}</span> &nbsp;·&nbsp; ${acc.product||'—'}</p>
+          ${ea.days!=null?`<p class="text-xs mt-1 ${ea.days<0?'text-red-400':ea.days<30?'text-red-400':ea.days<90?'text-amber-400':'text-slate-400'}">Renewal: ${acc.renewal_date} (${ea.days<0?'Expired':ea.days+'d left'}) ${renewBadge(ea.renewalStatus)}</p>`:''}
+        </div>
+        <div class="flex gap-2">
+          <button onclick="startEditAcc(${acc.id})" class="border text-slate-400 text-sm px-3 py-1.5 rounded-xl" style="border-color:rgba(255,255,255,0.1)">Edit</button>
+          <button onclick="window._preColAccId=${acc.id};colMode='add';go('collections')" class="border text-emerald-400 text-sm px-3 py-1.5 rounded-xl" style="border-color:rgba(16,185,129,0.3)">+ Collection</button>
+          <button onclick="createOppFromAcc(${acc.id})" class="border text-indigo-400 text-sm px-3 py-1.5 rounded-xl" style="border-color:rgba(99,102,241,0.3)">+ Opportunity</button>
+        </div>
+      </div>
+    </div>
+    <div class="flex gap-1 mb-5 border-b" style="border-color:rgba(255,255,255,0.07)">
+      ${tabs.map(t=>`<button onclick="window._acc360Tab='${t.k}';renderAcc360Body()" class="px-4 py-2.5 text-sm font-medium transition ${tab===t.k?'text-indigo-400 border-b-2 border-indigo-400':' text-slate-400 hover:text-slate-300'}" style="${tab===t.k?'margin-bottom:-1px':''}">${t.l}</button>`).join('')}
+    </div>
+    <div id="a360-body"></div>
+  `;
+  window._acc360Data={acc,ea,accInvs,accCols,accOpps,totInv,totColl,totOut,openPipe};
+  renderAcc360Body();
+}
+function renderAcc360Body(){
+  const d=window._acc360Data;
+  if(!d)return;
+  const tab=window._acc360Tab||'overview';
+  // Update tab active states
+  document.querySelectorAll('#app button[onclick*="acc360Tab"]').forEach(b=>{
+    const k=b.getAttribute('onclick').match(/'(\w+)'/)?.[1];
+    const isActive=k===tab;
+    b.className=`px-4 py-2.5 text-sm font-medium transition ${isActive?'text-indigo-400 border-b-2 border-indigo-400':' text-slate-400 hover:text-slate-300'}`;
+    b.style.marginBottom=isActive?'-1px':'';
+  });
+  if(tab==='overview') renderAcc360Overview(d);
+  else if(tab==='opps') renderAcc360Opps(d);
+  else if(tab==='invoices') renderAcc360Invs(d);
+  else if(tab==='collections') renderAcc360Cols(d);
+  else if(tab==='incentives') renderAcc360Inc(d);
+}
+function renderAcc360Overview(d){
+  const {acc,ea,totInv,totColl,totOut,openPipe,accInvs}=d;
+  document.getElementById('a360-body').innerHTML=`
+    <div class="grid grid-cols-4 gap-4 mb-5">
+      ${mc('ACV / ARR',inr(ea.arr),'Annual contract value',0)}
+      ${mc('Total Invoiced',inr(totInv),`${accInvs.length} invoice${accInvs.length!==1?'s':''}`,1)}
+      ${mc('Outstanding',inr(totOut),totOut<=0?'Fully collected':'Unpaid balance',totOut>0?3:2)}
+      ${mc('Open Pipeline',inr(openPipe),'Active deals',2)}
+    </div>
+    <div class="grid grid-cols-2 gap-5">
+      ${card(`
+        <h3 class="text-sm font-bold text-slate-700 mb-4">Account Details</h3>
+        <div class="space-y-2.5">
+          ${[['Account Code',acc.account_code||'—'],['Status',acc.status||'active'],['Segment / Tier',acc.account_tier||'—'],['Product',acc.product||'—'],['Billing',acc.billing_frequency||'—'],['AM',acc.am_name],['CSM',acc.csm_name],['Health',acc.health_score||'—'],['Churn Risk',acc.churn_risk||'—'],['Renewal',acc.renewal_date+(ea.days!=null?' ('+ea.days+'d left)':'')],['Notes',acc.notes||'—']].map(([k,v])=>`
+          <div class="flex justify-between">
+            <span class="text-xs text-slate-400">${k}</span>
+            <span class="text-xs font-medium text-slate-300">${v}</span>
+          </div>`).join('')}
+        </div>
+      `,'p-5')}
+      ${card(`
+        <h3 class="text-sm font-bold text-slate-700 mb-4">Invoice Summary</h3>
+        ${accInvs.length===0?`<p class="text-sm text-slate-400">No invoices yet. <button onclick="window._acc360Tab='invoices';renderAcc360Body()" class="text-indigo-400 hover:underline">Add one</button>.</p>`:`
+        <table class="w-full text-xs">
+          <thead><tr>${['Invoice','Amount','Collected','Outstanding','Status'].map(h=>`<th class="text-left py-1.5 text-slate-400 font-semibold">${h}</th>`).join('')}</tr></thead>
+          <tbody class="divide-y" style="border-color:rgba(255,255,255,0.05)">
+            ${accInvs.map(i=>{const out=invOutstanding(i);return`<tr>
+              <td class="py-1.5 font-mono text-slate-400">${i.invoice_number}</td>
+              <td class="py-1.5 text-slate-300">${inr(i.net_amount)}</td>
+              <td class="py-1.5 text-emerald-400">${inr(invCollected(i.id))}</td>
+              <td class="py-1.5 ${out>0?'text-amber-400':'text-emerald-400'}">${inr(out)}</td>
+              <td class="py-1.5">${invStatusBadge(invStatusCalc(i))}</td>
+            </tr>`;}).join('')}
+          </tbody>
+        </table>`}
+      `,'p-5')}
+    </div>
+  `;
+}
+function renderAcc360Opps(d){
+  const {accOpps}=d;
+  document.getElementById('a360-body').innerHTML=accOpps.length===0
+    ? card(emptyState('No opportunities for this account.'),'p-4')
+    : `<div class="card overflow-hidden"><div class="overflow-x-auto">
+    <table class="w-full text-sm dt min-w-[800px]">
+      <thead class="bg-slate-50 border-b border-slate-100">${thRow(['Opportunity','Type','Stage','Amount','Quarter','Status',''])}</thead>
+      <tbody class="divide-y divide-slate-50">
+        ${accOpps.map(o=>`<tr>
+          <td class="px-4 py-3 font-semibold text-slate-800">${o.opportunity_name}</td>
+          <td class="px-4 py-3">${dealTypeBadge(o.deal_type||'Regular')}</td>
+          <td class="px-4 py-3 text-slate-500 text-xs">${o.stage||o.status}</td>
+          <td class="px-4 py-3 font-semibold">${inr(o.value||0)}</td>
+          <td class="px-4 py-3 text-slate-500 text-xs">${o.quarter||'—'} ${o.fy||''}</td>
+          <td class="px-4 py-3">${stBadge(o.status)}</td>
+          <td class="px-4 py-3"><button onclick="editId=${o.id};oppMode='edit';go('opportunities')" class="text-slate-400 hover:underline text-xs">Edit</button></td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div></div>`;
+}
+function renderAcc360Invs(d){
+  const {acc,accInvs}=d;
+  document.getElementById('a360-body').innerHTML=`
+    <div class="flex justify-end mb-3">
+      <button onclick="accMode='add';window._invAccPrefill=${acc.id};go('invoices')" class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold px-4 py-2 rounded-xl shadow shadow-indigo-900/40">+ Add Invoice</button>
+    </div>
+    ${accInvs.length===0?card(emptyState('No invoices for this account.'),'p-4'):`
+    <div class="card overflow-hidden"><div class="overflow-x-auto">
+    <table class="w-full text-sm dt min-w-[860px]">
+      <thead class="bg-slate-50 border-b border-slate-100">${thRow(['Invoice No','Type','Date','Due','Amount','Collected','Outstanding','Status',''])}</thead>
+      <tbody class="divide-y divide-slate-50">
+        ${accInvs.map(i=>{const out=invOutstanding(i);const st=invStatusCalc(i);return`<tr>
+          <td class="px-4 py-3 font-mono text-xs text-slate-400">${i.invoice_number}</td>
+          <td class="px-4 py-3 text-slate-500 text-xs">${i.invoice_type||'—'}</td>
+          <td class="px-4 py-3 text-xs text-slate-500">${i.invoice_date||'—'}</td>
+          <td class="px-4 py-3 text-xs ${st==='overdue'?'text-red-400 font-semibold':'text-slate-500'}">${i.due_date||'—'}</td>
+          <td class="px-4 py-3 font-semibold text-slate-800">${inr(i.net_amount||0)}</td>
+          <td class="px-4 py-3 text-emerald-400 font-semibold">${inr(invCollected(i.id))}</td>
+          <td class="px-4 py-3 font-bold ${out>0?'text-amber-400':'text-emerald-400'}">${inr(out)}</td>
+          <td class="px-4 py-3">${invStatusBadge(st)}</td>
+          <td class="px-4 py-3"><button onclick="window._invEditId=${i.id};accMode='edit';go('invoices')" class="text-slate-400 hover:underline text-xs">Edit</button></td>
+        </tr>`;}).join('')}
+      </tbody>
+    </table></div></div>`}`;
+}
+function renderAcc360Cols(d){
+  const {accCols,accInvs}=d;
+  document.getElementById('a360-body').innerHTML=accCols.length===0
+    ? card(emptyState('No collections for this account.'),'p-4')
+    : `<div class="card overflow-hidden"><div class="overflow-x-auto">
+    <table class="w-full text-sm dt min-w-[860px]">
+      <thead class="bg-slate-50 border-b border-slate-100">${thRow(['Invoice','Date','AM','CSM','Regular','Upsell','Total','Period'])}</thead>
+      <tbody class="divide-y divide-slate-50">
+        ${accCols.map(c=>{
+          const inv2=c.invoice_id?invs().find(i=>i.id===c.invoice_id):null;
+          const reg=c.regular_amount||0, ups=c.upsell_amount||0;
+          return`<tr>
+            <td class="px-4 py-3 font-mono text-xs text-slate-400">${inv2?.invoice_number||'—'}</td>
+            <td class="px-4 py-3 text-xs text-slate-500">${c.collection_date||c.month+' '+c.year||'—'}</td>
+            <td class="px-4 py-3 text-slate-500 text-xs">${c.am_name||'—'}</td>
+            <td class="px-4 py-3 text-slate-500 text-xs">${c.csm_name||'—'}</td>
+            <td class="px-4 py-3">${reg>0?`<span class="font-semibold" style="color:#6ee7b7">${inr(reg)}</span>`:'<span class="text-slate-500 text-xs">—</span>'}</td>
+            <td class="px-4 py-3">${ups>0?`<span class="font-semibold" style="color:#fcd34d">${inr(ups)}</span>`:'<span class="text-slate-500 text-xs">—</span>'}</td>
+            <td class="px-4 py-3 font-bold text-slate-800">${inr(reg+ups)}</td>
+            <td class="px-4 py-3 text-xs text-slate-500">${c.month||''} ${c.year||''}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table></div></div>`;
+}
+function renderAcc360Inc(d){
+  const {acc,accCols}=d;
+  const c=cfg(), amPct=c.am_pct||5, csmPct=c.csm_pct||3, amUp=c.am_upsell_pct||8, csmUp=c.csm_upsell_pct||6, reps=c.reps||[];
+  const repMap={};
+  function _add(name,type,reg,ups){if(!name)return;if(!repMap[name])repMap[name]={type,reg:0,ups:0};repMap[name].reg+=reg;repMap[name].ups+=ups;}
+  accCols.forEach(x=>{
+    if(x.am_name!==undefined){_add(x.am_name,'AM',x.regular_amount||0,x.upsell_amount||0);_add(x.csm_name,'CSM',x.regular_amount||0,x.upsell_amount||0);}
+    else if(x.regular_amount!==undefined){_add(x.rep_name,x.rep_type,x.regular_amount||0,x.upsell_amount||0);}
+    else{if((x.deal_type||'Regular')==='Upsell/Cross-sell')_add(x.rep_name,x.rep_type,0,x.amount||0);else _add(x.rep_name,x.rep_type,x.amount||0,0);}
+  });
+  const rows=Object.entries(repMap).map(([name,{type,reg,ups}])=>{
+    const cu=(reps.find(r=>r.name===name)||{}).custom_pct;
+    const rRate=cu!==undefined?cu:(type==='AM'?amPct:csmPct);
+    const uRate=cu!==undefined?cu:(type==='AM'?amUp:csmUp);
+    const regInc=reg*rRate/100, upsInc=ups*uRate/100;
+    return{name,type,reg,ups,rRate,uRate,regInc,upsInc,total:regInc+upsInc};
+  }).sort((a,b)=>b.total-a.total);
+  document.getElementById('a360-body').innerHTML=rows.length===0
+    ? card(emptyState('No collections linked to this account yet.'),'p-4')
+    : `<div class="card overflow-hidden"><div class="overflow-x-auto">
+    <table class="w-full text-sm dt min-w-[860px]">
+      <thead class="bg-slate-50 border-b border-slate-100">${thRow(['Rep','Type','Reg. Collected','Rate','Reg. Inc.','Upsell Collected','Rate','Upsell Inc.','Total'])}</thead>
+      <tbody class="divide-y divide-slate-50">
+        ${rows.map(r=>`<tr>
+          <td class="px-4 py-3 font-semibold text-slate-800">${r.name}</td>
+          <td class="px-4 py-3">${typeBadge(r.type)}</td>
+          <td class="px-4 py-3 text-slate-500">${r.reg>0?inr(r.reg):'—'}</td>
+          <td class="px-4 py-3 text-xs" style="color:#818cf8">${r.rRate}%</td>
+          <td class="px-4 py-3 font-semibold" style="color:#a5b4fc">${r.regInc>0?inr(Math.round(r.regInc)):'—'}</td>
+          <td class="px-4 py-3 text-slate-500">${r.ups>0?inr(r.ups):'—'}</td>
+          <td class="px-4 py-3 text-xs" style="color:#fbbf24">${r.uRate}%</td>
+          <td class="px-4 py-3 font-semibold" style="color:#fcd34d">${r.upsInc>0?inr(Math.round(r.upsInc)):'—'}</td>
+          <td class="px-4 py-3 font-bold text-emerald-400">${inr(Math.round(r.total))}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div></div>`;
 }
 
 // ═══════════════════════════════════════════════════
@@ -1865,8 +2387,29 @@ function delRep(name){
 }
 
 function clearAllData(){
-  ['opps','cols','accs','cfg'].forEach(k=>localStorage.removeItem(k));
+  ['opps','cols','accs','cfg','invs','csm_scores'].forEach(k=>localStorage.removeItem(k));
   toast('All data cleared'); go('settings');
+}
+function migrateData(){
+  // 1. Assign account_code to accounts missing one
+  let allA=accs(), aChanged=false;
+  allA.forEach(a=>{
+    if(!a.account_code){
+      const nums=allA.map(x=>{const m=x.account_code?.match(/(\d+)$/);return m?parseInt(m[1]):0;});
+      const next=Math.max(0,...nums)+1;
+      a.account_code='ACC-'+String(next).padStart(3,'0');
+      aChanged=true;
+    }
+  });
+  if(aChanged) setAccs(allA);
+  // 2. Add account_id to opportunities matched by client_name
+  let allO=opps(), oChanged=false;
+  allO.forEach(o=>{if(!o.account_id){const acc=accs().find(a=>a.account_name===o.client_name);if(acc){o.account_id=acc.id;oChanged=true;}}});
+  if(oChanged) setOpps(allO);
+  // 3. Add account_id to collections matched by customer_name
+  let allC=cols(), cChanged=false;
+  allC.forEach(c=>{if(!c.account_id){const acc=accs().find(a=>a.account_name===c.customer_name);if(acc){c.account_id=acc.id;cChanged=true;}}});
+  if(cChanged) setCols(allC);
 }
 
 // ═══════════════════════════════════════════════════
@@ -1881,6 +2424,7 @@ function toast(msg){
 // ═══════════════════════════════════════════════════
 //  BOOT
 // ═══════════════════════════════════════════════════
+migrateData();
 go('dashboard');
 </script>
 </body>
