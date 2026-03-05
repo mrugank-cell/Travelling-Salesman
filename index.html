@@ -195,14 +195,28 @@ const MC_THEMES = ['mc-blue','mc-green','mc-violet','mc-amber','mc-rose','mc-cya
 const ACCENTS   = ['chart-accent-blue','chart-accent-green','chart-accent-violet','chart-accent-amber','chart-accent-rose','chart-accent-cyan'];
 
 const COL_CSV_FIELDS = [
-  { key:'customer_name', label:'Customer Name',     required:true,  aliases:['customer','client','account','company','customer name','customer_name'] },
-  { key:'am_name',       label:'AM Name',           required:true,  aliases:['am','am name','account manager','account_manager','am_name','ae'] },
-  { key:'csm_name',      label:'CSM Name',          required:true,  aliases:['csm','csm name','customer success','csm_name','customer success manager'] },
-  { key:'invoice_amt',   label:'Invoice Amount',    required:false, aliases:['invoice','invoice amount','amount','total','total amount','invoice_amount','invoice_amt'] },
-  { key:'regular',       label:'Regular Amount',    required:false, aliases:['regular','regular amount','standard','base','base amount','regular_amount'] },
-  { key:'upsell',        label:'Upsell/X-sell Amt', required:false, aliases:['upsell','upsell amount','cross sell','crosssell','upsell/crosssell','upsell/cross-sell','upsell_amount','cross-sell'] },
-  { key:'month',         label:'Month',             required:false, aliases:['month','billing month','collection month'] },
-  { key:'year',          label:'Year',              required:false, aliases:['year','billing year'] },
+  { key:'collection_date', label:'Date',               required:false, aliases:['date','collection date','payment date','received date','transaction date'] },
+  { key:'customer_name',   label:'Customer Name',      required:true,  aliases:['customer','customer name','client','company','account','account name','name'] },
+  { key:'amount',          label:'Amount',             required:false, aliases:['amount','base amount','collection amount','collected','net amount','amt'] },
+  { key:'tds_amount',      label:'TDS Amount',         required:false, aliases:['tds','tds amount','tax deducted','tds deducted','tax'] },
+  { key:'inv_amount',      label:'Inv Amount',         required:false, aliases:['inv amount','invoice amount','invoice','inv amt','invoice amt','inv'] },
+  { key:'gst_amount',      label:'GST',                required:false, aliases:['gst','gst amount','goods and services tax','gst amt'] },
+  { key:'total_amount',    label:'Total Amount',       required:false, aliases:['total','total amount','gross','gross amount','total collected','grand total'] },
+  { key:'upsell_flag',     label:'Upsell / Crossell',  required:false, aliases:['upsell','upsell / crossell','upsell/crossell','cross sell','crossell','upsell/cross-sell','upsell flag','is upsell','u/c','uc'] },
+  { key:'month',           label:'Month',              required:false, aliases:['month','billing month','collection month'] },
+  { key:'year',            label:'Year',               required:false, aliases:['year','billing year'] },
+];
+
+const OPP_CSV_FIELDS = [
+  { key:'opportunity_name', label:'Opportunity Name', required:true,  aliases:['opportunity','opportunity name','deal name','deal','name','opp name','opp'] },
+  { key:'am_name',          label:'AM Name',          required:true,  aliases:['am','am name','account manager','rep','rep name','sales rep','ae'] },
+  { key:'client_name',      label:'Client Name',      required:false, aliases:['client','client name','company','account','customer','account name'] },
+  { key:'close_month',      label:'Expected Close Month', required:true, aliases:['close month','expected close','close','month','expected month','close date','expected close month'] },
+  { key:'close_year',       label:'Close Year',       required:false, aliases:['close year','year','expected year'] },
+  { key:'value',            label:'Total Deal Size',  required:true,  aliases:['deal size','total deal size','value','amount','deal value','total','deal amount','contract value'] },
+  { key:'status',           label:'Status',           required:false, aliases:['status','deal status','stage'] },
+  { key:'quarter',          label:'Quarter',          required:false, aliases:['quarter','q','qtr'] },
+  { key:'notes',            label:'Notes',            required:false, aliases:['notes','note','comments','remarks','description'] },
 ];
 
 const ACC_FIELDS = [
@@ -347,6 +361,7 @@ let page='dashboard', charts={};
 let oppMode='list', colMode='list', accMode='list';
 let editId=null, accEditId=null;
 let csvParsed=null, csvMapping={};
+let oppCsvParsed=null, oppCsvMapping={};
 let colCsvParsed=null, colCsvMapping={};
 
 function go(p, filter=null){
@@ -488,7 +503,7 @@ function dashboard(){
     <div class="grid grid-cols-4 gap-4 mb-4">
       ${mc('Total ARR',inr(totalARR),`${allA.length} accounts`,0,"go('accounts')")}
       ${mc('Monthly MRR',inr(totalARR/12),'Annualised ÷ 12',1,"go('accounts')")}
-      ${mc('At-Risk Accounts',atRisk.length,'High churn or Critical',4,"go('accounts',{risk:'High'})")}
+      ${mc('Churn Risk',atRisk.length,'High churn or Critical',4,"go('accounts',{risk:'High'})")}
       ${mc('Renewing in 90d',upcoming.length,inr(upcoming.reduce((s,a)=>s+a.arr,0))+' ARR',3,"go('accounts',{renew:'90'})")}
     </div>
     ${(()=>{const allI=invs();const totInv=allI.reduce((s,i)=>s+(i.net_amount||0),0);const totOut=allI.reduce((s,i)=>s+invOutstanding(i),0);const overdue=allI.filter(i=>invStatusCalc(i)==='overdue').length;return allI.length?`<div class="grid grid-cols-3 gap-4 mb-6">${mc('Total Invoiced',inr(totInv),allI.length+' invoices',1,"go('invoices')")}${mc('Outstanding',inr(totOut),'Unpaid balance',3,"go('invoices')")}${mc('Overdue Invoices',overdue,'Past due date',4,"go('invoices')")} </div>`:'';})()}
@@ -584,7 +599,7 @@ function renderAccList(){
       ${mc('Total Accounts',data.length,'',0)}
       ${mc('Total ARR',inr(totalARR),'',1)}
       ${mc('Total MRR',inr(totalARR/12),'',2)}
-      ${mc('At Risk',data.filter(a=>a.churn_risk==='High'||a.renewalStatus==='Critical').length,'High churn / Critical',4)}
+      ${mc('Churn Risk',data.filter(a=>a.churn_risk==='High'||a.renewalStatus==='Critical').length,'High churn / Critical',4)}
     </div>
     <div class="flex flex-wrap gap-2 mb-4">
       ${sel('af-am',   [{v:'',l:'All AMs'},...ams.map(a=>({v:a,l:a}))],  '', 'w-auto')}
@@ -888,6 +903,138 @@ function downloadOppsCSV(){
     ['Opportunity Name','Client','Rep','Type','Value','Close Month','Close Year','Quarter','FY','Status','Deal Type'],
     data.map(o=>[o.opportunity_name,o.client_name,o.rep_name,o.rep_type,o.value,o.close_month,o.close_year,o.quarter,o.fy,o.status,o.deal_type||'Regular'])
   );
+}
+function downloadOppTemplate(){
+  const h=['Opportunity Name','AM Name','Client Name','Expected Close Month','Close Year','Total Deal Size','Status','Quarter','Notes'];
+  const r=[
+    ['Q4 Renewal - Acme Corp','Rahul Sharma','Acme Corp','November','2025','1200000','Open','Q3','Key renewal'],
+    ['New Upsell - TechCo','Priya Patel','TechCo Ltd','December','2025','350000','Best Case','Q3','Upsell to enterprise'],
+  ];
+  const csv=[h,...r].map(row=>row.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download='opportunities_template.csv'; a.click();
+}
+function renderOppImport(){
+  document.getElementById('opp-body').innerHTML=card(`
+    <div class="flex items-center justify-between mb-5">
+      <h2 class="text-base font-bold text-slate-800">Import Opportunities from CSV</h2>
+      <button onclick="oppMode='list';render()" class="text-xs text-slate-400 hover:text-slate-600">← Back</button>
+    </div>
+    <div id="opp-csv-s1">
+      <div class="border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-all"
+           style="border-color:rgba(99,102,241,0.3)"
+           onclick="document.getElementById('opp-csv-fi').click()"
+           ondragover="event.preventDefault();this.style.borderColor='#818cf8';this.style.background='rgba(99,102,241,0.08)'"
+           ondragleave="this.style.borderColor='rgba(99,102,241,0.3)';this.style.background=''"
+           ondrop="event.preventDefault();this.style.borderColor='rgba(99,102,241,0.3)';this.style.background='';handleOppFileDrop(event)">
+        <div class="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl mx-auto mb-3" style="background:rgba(99,102,241,0.15)">📂</div>
+        <p class="text-sm font-semibold text-slate-700">Drop your CSV here or <span style="color:#818cf8">browse</span></p>
+        <p class="text-xs text-slate-500 mt-2">Required: <strong>Opportunity Name</strong> · <strong>AM Name</strong> · <strong>Expected Close Month</strong> · <strong>Total Deal Size</strong></p>
+        <p class="text-xs text-slate-500 mt-1">Optional: Client Name · Status · Quarter · Notes</p>
+      </div>
+      <input type="file" id="opp-csv-fi" accept=".csv" class="hidden" onchange="handleOppFileInput(this)"/>
+      <p class="text-xs text-slate-500 mt-4 text-center">
+        Need a template? <button onclick="downloadOppTemplate()" style="color:#818cf8" class="hover:underline font-medium">Download sample CSV</button>
+      </p>
+    </div>
+    <div id="opp-csv-s2" class="hidden"></div>
+  `,'p-6');
+}
+function handleOppFileDrop(e){const f=e.dataTransfer.files[0]; if(f) processOppCSVFile(f);}
+function handleOppFileInput(i){if(i.files[0]) processOppCSVFile(i.files[0]);}
+function processOppCSVFile(file){
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const parsed=parseCSV(e.target.result);
+    if(!parsed.headers.length){toast('Could not parse CSV.');return;}
+    oppCsvParsed=parsed; oppCsvMapping=autoMapOppCols(parsed.headers);
+    renderOppMappingUI(file.name,parsed);
+  };
+  reader.readAsText(file);
+}
+function autoMapOppCols(headers){
+  const norm=h=>h.toLowerCase().replace(/[^a-z0-9]/g,' ').trim();
+  const m={};
+  OPP_CSV_FIELDS.forEach(f=>{
+    const found=headers.find(h=>f.aliases.some(a=>norm(h)===a||norm(h).includes(a)));
+    m[f.key]=found||'';
+  });
+  return m;
+}
+function renderOppMappingUI(fname,parsed){
+  document.getElementById('opp-csv-s1').classList.add('hidden');
+  const s2=document.getElementById('opp-csv-s2'); s2.classList.remove('hidden');
+  const colOpts=[{v:'',l:'— skip —'},...parsed.headers.map(h=>({v:h,l:h}))];
+  const prev=parsed.rows.slice(0,3);
+  const now=new Date();
+  s2.innerHTML=`
+    <div class="rounded-xl px-4 py-3 mb-5 flex items-center gap-3" style="background:rgba(99,102,241,0.10);border:1px solid rgba(99,102,241,0.25)">
+      <span class="text-xl">✅</span>
+      <div>
+        <p class="text-sm font-semibold" style="color:#a5b4fc">${fname} — ${parsed.rows.length} rows detected</p>
+        <p class="text-xs" style="color:#818cf8">Map your columns, set defaults, then click Import.</p>
+      </div>
+    </div>
+    <div class="grid grid-cols-2 gap-5 mb-5">
+      <div>
+        <p class="text-sm font-semibold text-slate-700 mb-3">Column Mapping</p>
+        <table class="w-full text-sm rounded-xl overflow-hidden" style="border:1px solid rgba(255,255,255,0.08)">
+          <thead style="background:#1a2035"><tr>
+            <th class="text-left px-3 py-2 text-xs font-semibold text-slate-500">Field</th>
+            <th class="text-left px-3 py-2 text-xs font-semibold text-slate-500">CSV Column</th>
+          </tr></thead>
+          <tbody>${OPP_CSV_FIELDS.map(f=>`<tr style="border-top:1px solid rgba(255,255,255,0.05)">
+            <td class="px-3 py-2 text-xs text-slate-400">${f.label}${f.required?' <span style="color:#f87171">*</span>':''}</td>
+            <td class="px-3 py-2">${sel('omap-'+f.key,colOpts,oppCsvMapping[f.key]||'','text-xs w-full')}</td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </div>
+      <div>
+        <p class="text-sm font-semibold text-slate-700 mb-3">Defaults (used when column missing)</p>
+        <div class="space-y-3 text-sm">
+          ${frow(lbl('Default Status')+sel('omap-def-st',[...STATUS.map(s=>({v:s,l:s}))],'Open','text-xs'), lbl('Default Close Year')+inp('omap-def-yr','number',now.getFullYear()))}
+        </div>
+        <p class="text-sm font-semibold text-slate-700 mt-4 mb-3">Preview (first 3 rows)</p>
+        <div class="rounded-xl overflow-auto" style="border:1px solid rgba(255,255,255,0.08);max-height:150px">
+          <table class="w-full text-xs"><thead style="background:#1a2035"><tr>${parsed.headers.map(h=>`<th class="px-2 py-1.5 text-slate-500 text-left whitespace-nowrap">${h}</th>`).join('')}</tr></thead>
+          <tbody>${prev.map(r=>`<tr style="border-top:1px solid rgba(255,255,255,0.05)">${parsed.headers.map(h=>`<td class="px-2 py-1.5 text-slate-400 whitespace-nowrap">${r[h]||''}</td>`).join('')}</tr>`).join('')}</tbody></table>
+        </div>
+      </div>
+    </div>
+    <button onclick="executeOppImport()" class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold px-6 py-2.5 rounded-xl shadow">↑ Import ${parsed.rows.length} Opportunities</button>
+  `;
+}
+function executeOppImport(){
+  const mapping={};
+  OPP_CSV_FIELDS.forEach(f=>{const el=document.getElementById('omap-'+f.key);if(el)mapping[f.key]=el.value;});
+  if(!mapping.opportunity_name){alert('Map Opportunity Name column.');return;}
+  const defSt=document.getElementById('omap-def-st')?.value||'Open';
+  const defYr=parseInt(document.getElementById('omap-def-yr')?.value)||new Date().getFullYear();
+  const c=cfg();
+  const existing=opps(); let added=0;
+  const imported=(oppCsvParsed.rows||[]).map(row=>{
+    const name=(mapping.opportunity_name?row[mapping.opportunity_name]||'':'').trim();
+    if(!name) return null;
+    const amName=(mapping.am_name?row[mapping.am_name]||'':'').trim();
+    const clientName=(mapping.client_name?row[mapping.client_name]||'':'').trim()||name;
+    const rawMonth=(mapping.close_month?row[mapping.close_month]||'':'').trim();
+    const monthParsed=parseMonthStr(rawMonth);
+    const mIdx=monthParsed?MONTHS.indexOf(monthParsed):(new Date().getMonth());
+    const yr=parseInt(mapping.close_year?row[mapping.close_year]||'':'')||defYr;
+    const val=parseFloat((mapping.value?row[mapping.value]||'':'').replace(/[^0-9.]/g,''))||0;
+    const st=(mapping.status?row[mapping.status]||'':'').trim()||defSt;
+    const validSt=STATUS.includes(st)?st:defSt;
+    const notes=(mapping.notes?row[mapping.notes]||'':'').trim();
+    const{q,fy}=fyq(mIdx,yr);
+    const repType=(c.reps.find(r=>r.name===amName)||{}).type||'AM';
+    added++;
+    return{opportunity_name:name,client_name:clientName,rep_name:amName,rep_type:repType,value:val,close_month:MONTHS[mIdx],close_year:yr,quarter:q,fy,status:validSt,deal_type:'Regular',notes};
+  }).filter(Boolean);
+  const maxId=existing.length?existing.reduce((mx,a)=>Math.max(mx,Number(a.id)||0),0):0;
+  imported.forEach((o,i)=>{o.id=maxId+i+1;});
+  setOpps([...existing,...imported]);
+  logImport('opportunities','opportunities.csv',(oppCsvParsed.rows||[]).length,added,[]);
+  oppCsvParsed=null; oppCsvMapping={};
+  toast(`Imported ${added} opportunities`); oppMode='list'; go('opportunities');
 }
 function downloadColsCSV(){
   const data=cols(); if(!data.length){toast('No collections to export.');return;}
@@ -1320,13 +1467,16 @@ function opportunities(){
   document.getElementById('app').innerHTML=`
     ${pageHeader('Opportunities','Track your deals',
       `<div class="flex gap-2">
-        <button onclick="downloadOppsCSV()" class="border border-emerald-200 text-emerald-600 hover:bg-emerald-50 text-sm font-medium px-3 py-2 rounded-xl transition">↓ Export CSV</button>
+        <button onclick="downloadOppTemplate()" class="border text-slate-400 hover:bg-white/5 text-sm font-medium px-3 py-2 rounded-xl transition" style="border-color:rgba(255,255,255,0.1)">↓ Template</button>
+        <button onclick="downloadOppsCSV()" class="border text-emerald-400 text-sm font-medium px-3 py-2 rounded-xl transition hover:bg-emerald-500/10" style="border-color:rgba(16,185,129,0.35)">↓ Export CSV</button>
+        <button onclick="oppMode='import';render()" class="border text-indigo-400 text-sm font-medium px-3 py-2 rounded-xl transition hover:bg-indigo-500/10" style="border-color:rgba(99,102,241,0.35)">↑ Import CSV</button>
         <button onclick="oppMode='add';render()" class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold px-4 py-2 rounded-xl shadow shadow-indigo-200">+ Add Deal</button>
       </div>`
     )}
     <div id="opp-body"></div>
   `;
-  if(oppMode==='add'||oppMode==='edit') renderOppForm();
+  if(oppMode==='import') renderOppImport();
+  else if(oppMode==='add'||oppMode==='edit') renderOppForm();
   else renderOppList();
 }
 function renderOppList(){
@@ -1355,17 +1505,17 @@ function filterOpps(){
     ? card(emptyState('No opportunities found.'),'p-4')
     : `<div class="card overflow-hidden">
       <table class="w-full text-sm dt">
-        <thead class="bg-slate-50 border-b border-slate-100">${thRow(['Opportunity','Client','Rep','Deal Type','Value','Close','Quarter','Status',''])}</thead>
+        <thead class="bg-slate-50 border-b border-slate-100">${thRow(['Opportunity','Client','Rep','Value','Close','Quarter','Status','Notes',''])}</thead>
         <tbody class="divide-y divide-slate-50">
           ${data.map(o=>`<tr>
             <td class="px-4 py-3 font-semibold text-slate-800">${o.opportunity_name}</td>
             <td class="px-4 py-3 text-slate-500">${o.client_name}</td>
-            <td class="px-4 py-3">${o.rep_name} ${typeBadge(o.rep_type)}</td>
-            <td class="px-4 py-3">${dealTypeBadge(o.deal_type||'Regular')}</td>
+            <td class="px-4 py-3">${o.rep_name}</td>
             <td class="px-4 py-3 font-bold text-slate-800">${inr(o.value)}</td>
             <td class="px-4 py-3 text-slate-400 text-xs">${o.close_month} ${o.close_year}</td>
             <td class="px-4 py-3 text-xs text-slate-400">${o.quarter} · ${o.fy}</td>
             <td class="px-4 py-3">${stBadge(o.status)}</td>
+            <td class="px-4 py-3 text-slate-500 text-xs max-w-[150px] truncate" title="${o.notes||''}">${o.notes||'—'}</td>
             <td class="px-4 py-3 whitespace-nowrap">
               <button onclick="startEditOpp(${o.id})" class="text-indigo-500 hover:underline text-xs mr-2">Edit</button>
               <button onclick="delOpp(${o.id})" class="text-red-400 hover:underline text-xs">Del</button>
@@ -1373,9 +1523,9 @@ function filterOpps(){
           </tr>`).join('')}
         </tbody>
         <tfoot class="bg-slate-50 border-t border-slate-100"><tr>
-          <td colspan="4" class="px-4 py-3 text-xs text-slate-400">${data.length} deal${data.length!==1?'s':''}</td>
+          <td colspan="3" class="px-4 py-3 text-xs text-slate-400">${data.length} deal${data.length!==1?'s':''}</td>
           <td class="px-4 py-3 font-bold text-slate-800">${inr(total)}</td>
-          <td colspan="4"></td>
+          <td colspan="5"></td>
         </tr></tfoot>
       </table>
     </div>`;
@@ -1400,7 +1550,8 @@ function renderOppForm(){
       ${frow(lbl('Opportunity Name *')+inp('o-name','text',v('opportunity_name','')), lbl('Client Name *')+inp('o-client','text',v('client_name','')))}
       ${frow(lbl('Assign Rep *')+sel('o-rep',reps.map(r=>({v:r.name,l:`${r.name} (${r.type})`})),v('rep_name','')), lbl('Value (₹) *')+inp('o-val','number',v('value','')))}
       ${frow(lbl('Close Month *')+sel('o-month',MONTHS.map((m,i)=>({v:i,l:m})),cm), lbl('Close Year *')+inp('o-year','number',cy))}
-      ${frow(lbl('Status *')+sel('o-status',STATUS,v('status','Open')), lbl('Deal Type *')+sel('o-dtype',DEAL_TYPES,v('deal_type','Regular')))}
+      ${frow(lbl('Status *')+sel('o-status',STATUS,v('status','Open')), lbl('Deal Type')+sel('o-dtype',DEAL_TYPES,v('deal_type','Regular')))}
+      <div>${lbl('Notes')}<textarea id="o-notes" rows="2" class="w-full rounded-xl border text-sm p-2.5" style="background:#1e2535;border-color:rgba(255,255,255,0.1);color:#e2e8f0;resize:vertical" placeholder="Optional notes...">${v('notes','')}</textarea></div>
     </div>
     <div class="flex gap-3 mt-6">
       <button onclick="saveOpp(${isEdit?editId:'null'})" class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-5 py-2 rounded-xl text-sm font-semibold shadow shadow-indigo-200">${isEdit?'Save Changes':'Add Deal'}</button>
@@ -1417,8 +1568,8 @@ function saveOpp(eid){
   const c=cfg(), repName=repEl?.value||'', repType=(c.reps.find(r=>r.name===repName)||{}).type||'AM';
   const dt=document.getElementById('o-dtype').value||'Regular';
   const{q,fy}=fyq(mIdx,yr); let data=opps();
-  if(eid!==null){data=data.map(o=>o.id===eid?{...o,opportunity_name:name,client_name:client,rep_name:repName,rep_type:repType,value:val,close_month:MONTHS[mIdx],close_year:yr,quarter:q,fy,status:st,deal_type:dt}:o);}
-  else{data.push({id:uid(data),opportunity_name:name,client_name:client,rep_name:repName,rep_type:repType,value:val,close_month:MONTHS[mIdx],close_year:yr,quarter:q,fy,status:st,deal_type:dt});}
+  if(eid!==null){data=data.map(o=>o.id===eid?{...o,opportunity_name:name,client_name:client,rep_name:repName,rep_type:repType,value:val,close_month:MONTHS[mIdx],close_year:yr,quarter:q,fy,status:st,deal_type:dt,notes:document.getElementById('o-notes').value.trim()||''}:o);}
+  else{data.push({id:uid(data),opportunity_name:name,client_name:client,rep_name:repName,rep_type:repType,value:val,close_month:MONTHS[mIdx],close_year:yr,quarter:q,fy,status:st,deal_type:dt,notes:document.getElementById('o-notes').value.trim()||''});}
   setOpps(data); oppMode='list'; toast(eid?'Deal updated':'Deal added'); go('opportunities');
 }
 
@@ -1448,12 +1599,14 @@ function renderColList(){
   const csms=[...new Set(all.map(c=>c.csm_name).filter(Boolean))].sort();
   const totReg=all.reduce((s,c)=>s+(c.regular_amount??c.amount??0),0);
   const totUps=all.reduce((s,c)=>s+(c.upsell_amount??0),0);
+  const totAll=all.reduce((s,c)=>s+(c.total_amount||(c.regular_amount??c.amount??0)+(c.upsell_amount??0)),0);
+  const totTds=all.reduce((s,c)=>s+(c.tds_amount||0),0);
   document.getElementById('col-body').innerHTML=`
     <div class="grid grid-cols-4 gap-4 mb-5">
-      ${mc('Total Entries',all.length,'Invoices uploaded',0)}
-      ${mc('Regular Collected',inr(totReg),'',1)}
-      ${mc('Upsell Collected',inr(totUps),'',3)}
-      ${mc('Grand Total',inr(totReg+totUps),'All collections',2)}
+      ${mc('Total Entries',all.length,'Collection records',0)}
+      ${mc('Regular Collections',inr(totReg),`${all.filter(c=>c.upsell_flag!=='Y').length} entries`,1)}
+      ${mc('Upsell Collections',inr(totUps),`${all.filter(c=>c.upsell_flag==='Y').length} entries`,3)}
+      ${mc('Grand Total',inr(totAll),'All collections',2)}
     </div>
     <div class="flex flex-wrap gap-2 mb-4">
       ${sel('cf-am',[{v:'',l:'All AMs'},...ams.map(r=>({v:r,l:r}))], '', 'w-auto')}
@@ -1479,38 +1632,38 @@ function filterCols(){
   if(mo)  data=data.filter(c=>c.month===mo);
   const totReg=data.reduce((s,c)=>s+(c.regular_amount??c.amount??0),0);
   const totUps=data.reduce((s,c)=>s+(c.upsell_amount??0),0);
+  const totAll=data.reduce((s,c)=>s+(c.total_amount||(c.regular_amount??c.amount??0)+(c.upsell_amount??0)),0);
   document.getElementById('col-tbl').innerHTML=data.length===0
     ? card(emptyState('No collections found. Import a CSV or add entries manually.'),'p-4')
     : `<div class="card overflow-hidden">
       <div class="overflow-x-auto">
       <table class="w-full text-sm dt min-w-[860px]">
-        <thead class="bg-slate-50 border-b border-slate-100">${thRow(['Invoice No','Customer','AM','CSM','Regular Amt','Upsell Amt','Total','Period',''])}</thead>
+        <thead class="bg-slate-50 border-b border-slate-100">${thRow(['Date','Customer','AM','CSM','Upsell','Total Amount','TDS','GST','Period',''])}</thead>
         <tbody class="divide-y divide-slate-50">
           ${data.map(c=>{
             const reg=c.regular_amount??c.amount??0;
             const ups=c.upsell_amount??0;
+            const total=c.total_amount||(reg+ups);
             const amN=c.am_name||c.rep_name||'—';
             const csmN=c.csm_name||'—';
-            const inv2=c.invoice_id?invs().find(i=>i.id===c.invoice_id):null;
             return `<tr>
-              <td class="px-4 py-3 font-mono text-xs text-slate-400">${inv2?`<button onclick="window._invEditId=${inv2.id};page='invoices';accMode='edit';render()" class="hover:text-indigo-400">${inv2.invoice_number}</button>`:'—'}</td>
+              <td class="px-4 py-3 text-xs text-slate-500">${c.collection_date||`${c.month||''} ${c.year||''}`}</td>
               <td class="px-4 py-3 font-semibold text-slate-800">${c.customer_name||'—'}</td>
               <td class="px-4 py-3 text-slate-500 text-xs">${amN}</td>
               <td class="px-4 py-3 text-slate-500 text-xs">${csmN}</td>
-              <td class="px-4 py-3">${reg>0?`<span class="font-semibold" style="color:#6ee7b7">${inr(reg)}</span>`:'<span class="text-slate-500 text-xs">—</span>'}</td>
-              <td class="px-4 py-3">${ups>0?`<span class="font-semibold" style="color:#fcd34d">${inr(ups)}</span>`:'<span class="text-slate-500 text-xs">—</span>'}</td>
-              <td class="px-4 py-3 font-bold text-slate-800">${inr(reg+ups)}</td>
-              <td class="px-4 py-3 text-slate-500 text-xs">${c.month} ${c.year}</td>
+              <td class="px-4 py-3">${c.upsell_flag==='Y'?'<span class="text-xs px-2 py-0.5 rounded-full font-semibold" style="background:rgba(245,158,11,0.15);color:#fcd34d">Upsell</span>':'<span class="text-xs px-2 py-0.5 rounded-full font-semibold" style="background:rgba(99,102,241,0.15);color:#a5b4fc">Regular</span>'}</td>
+              <td class="px-4 py-3 font-bold text-slate-800">${inr(total)}</td>
+              <td class="px-4 py-3 text-xs text-slate-500">${c.tds_amount?inr(c.tds_amount):'—'}</td>
+              <td class="px-4 py-3 text-xs text-slate-500">${c.gst_amount?inr(c.gst_amount):'—'}</td>
+              <td class="px-4 py-3 text-slate-500 text-xs">${c.month||''} ${c.year||''}</td>
               <td class="px-4 py-3"><button onclick="delCol(${c.id})" class="text-red-400 hover:underline text-xs">Del</button></td>
             </tr>`;
           }).join('')}
         </tbody>
         <tfoot class="bg-slate-50 border-t border-slate-100"><tr>
-          <td colspan="4" class="px-4 py-3 text-xs text-slate-400">${data.length} entr${data.length!==1?'ies':'y'}</td>
-          <td class="px-4 py-3 font-bold" style="color:#6ee7b7">${inr(totReg)}</td>
-          <td class="px-4 py-3 font-bold" style="color:#fcd34d">${inr(totUps)}</td>
-          <td class="px-4 py-3 font-bold text-slate-800">${inr(totReg+totUps)}</td>
-          <td colspan="2"></td>
+          <td colspan="5" class="px-4 py-3 text-xs text-slate-400">${data.length} entr${data.length!==1?'ies':'y'}</td>
+          <td class="px-4 py-3 font-bold text-slate-800">${inr(totAll)}</td>
+          <td colspan="4"></td>
         </tr></tfoot>
       </table>
       </div>
@@ -1660,8 +1813,8 @@ function renderColImport(){
            ondrop="event.preventDefault();this.style.borderColor='rgba(99,102,241,0.3)';this.style.background='';handleColFileDrop(event)">
         <div class="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl mx-auto mb-3" style="background:rgba(99,102,241,0.15)">📂</div>
         <p class="text-sm font-semibold text-slate-700">Drop your CSV here or <span style="color:#818cf8">browse</span></p>
-        <p class="text-xs text-slate-500 mt-2">Required columns: <strong>Customer Name</strong> · <strong>AM Name</strong> · <strong>CSM Name</strong></p>
-        <p class="text-xs text-slate-500 mt-1">Optional: Invoice Amount · Regular · Upsell/Crosssell · Month · Year</p>
+        <p class="text-xs text-slate-500 mt-2">Required: <strong>Customer Name</strong></p>
+        <p class="text-xs text-slate-500 mt-1">Optional: Date · Amount · TDS Amount · Inv Amount · GST · Total Amount · Upsell/Crossell (Y/N) · Month · Year</p>
       </div>
       <input type="file" id="col-csv-fi" accept=".csv" class="hidden" onchange="handleColFileInput(this)"/>
       <p class="text-xs text-slate-500 mt-4 text-center">
@@ -1750,30 +1903,54 @@ function executeColImport(){
   const mapping={};
   COL_CSV_FIELDS.forEach(f=>{const el=document.getElementById('cmap-'+f.key);if(el)mapping[f.key]=el.value;});
   if(!mapping.customer_name){alert('Map Customer Name column.');return;}
-  const defMo=document.getElementById('cmap-def-mo').value;
-  const defYr=parseInt(document.getElementById('cmap-def-yr').value)||new Date().getFullYear();
+  const defMo=document.getElementById('cmap-def-mo')?.value||MONTHS[new Date().getMonth()];
+  const defYr=parseInt(document.getElementById('cmap-def-yr')?.value)||new Date().getFullYear();
   const existing=cols(); let added=0;
-  const imported=colCsvParsed.rows.map(row=>{
-    const cust=mapping.customer_name?(row[mapping.customer_name]||'').trim():'';
+  const allAccs=accs();
+  const imported=(colCsvParsed.rows||[]).map(row=>{
+    const cust=(mapping.customer_name?row[mapping.customer_name]||'':'').trim();
     if(!cust) return null;
-    const amName=(mapping.am_name?row[mapping.am_name]||'':'').trim();
-    const csmName=(mapping.csm_name?row[mapping.csm_name]||'':'').trim();
-    const invAmt=parseFloat((mapping.invoice_amt?row[mapping.invoice_amt]:'')||'0')||0;
-    let reg=parseFloat((mapping.regular?row[mapping.regular]:'')||'0')||0;
-    let ups=parseFloat((mapping.upsell?row[mapping.upsell]:'')||'0')||0;
-    if(!mapping.regular&&!mapping.upsell&&invAmt>0){reg=invAmt;ups=0;}
-    else if(reg===0&&ups===0&&invAmt>0){reg=invAmt;}
-    const rawMonth=mapping.month?(row[mapping.month]||''):'';
-    const month=parseMonthStr(rawMonth)||defMo;
-    const rawYear=mapping.year?(row[mapping.year]||''):'';
-    const year=parseInt(rawYear)||defYr;
+    // Look up account to get AM/CSM
+    const acc=allAccs.find(a=>a.account_name.toLowerCase()===cust.toLowerCase())||allAccs.find(a=>a.account_name.toLowerCase().includes(cust.toLowerCase()));
+    const amName=acc?.am_name||'';
+    const csmName=acc?.csm_name||'';
+    const amount=parseFloat((mapping.amount?row[mapping.amount]||'':'').replace(/[^0-9.]/g,''))||0;
+    const tdsAmt=parseFloat((mapping.tds_amount?row[mapping.tds_amount]||'':'').replace(/[^0-9.]/g,''))||0;
+    const invAmt=parseFloat((mapping.inv_amount?row[mapping.inv_amount]||'':'').replace(/[^0-9.]/g,''))||0;
+    const gstAmt=parseFloat((mapping.gst_amount?row[mapping.gst_amount]||'':'').replace(/[^0-9.]/g,''))||0;
+    const totalAmt=parseFloat((mapping.total_amount?row[mapping.total_amount]||'':'').replace(/[^0-9.]/g,''))||0;
+    const upsellRaw=(mapping.upsell_flag?row[mapping.upsell_flag]||'':'').trim().toLowerCase();
+    const isUpsell=upsellRaw==='y'||upsellRaw==='yes'||upsellRaw==='1'||upsellRaw==='true';
+    // Use total_amount if available, else inv_amount, else amount for incentive base
+    const incentiveBase=totalAmt||invAmt||amount||0;
+    const regular_amount=isUpsell?0:incentiveBase;
+    const upsell_amount=isUpsell?incentiveBase:0;
+    const rawDate=(mapping.collection_date?row[mapping.collection_date]||'':'').trim();
+    const rawMonth=(mapping.month?row[mapping.month]||'':'').trim();
+    // Try to parse month from date field if month column not mapped
+    let month=parseMonthStr(rawMonth);
+    let year=parseInt(mapping.year?row[mapping.year]||'':'')||null;
+    if(!month&&rawDate){
+      const d=new Date(rawDate);
+      if(!isNaN(d)){month=MONTHS[d.getMonth()];year=year||d.getFullYear();}
+    }
+    month=month||defMo; year=year||defYr;
     added++;
-    return{customer_name:cust,am_name:amName,csm_name:csmName,invoice_amount:reg+ups,regular_amount:reg,upsell_amount:ups,month,year};
+    return{
+      customer_name:cust, am_name:amName, csm_name:csmName,
+      account_id:acc?.id||null,
+      collection_date:rawDate||null,
+      amount, tds_amount:tdsAmt, inv_amount:invAmt, gst_amount:gstAmt, total_amount:totalAmt,
+      invoice_amount:incentiveBase,
+      upsell_flag:isUpsell?'Y':'N',
+      regular_amount, upsell_amount,
+      month, year,
+    };
   }).filter(Boolean);
-  const maxId=existing.length?Math.max(...existing.map(a=>a.id)):0;
+  const maxId=existing.length?existing.reduce((mx,a)=>Math.max(mx,Number(a.id)||0),0):0;
   imported.forEach((r,i)=>{r.id=maxId+i+1;});
   setCols([...existing,...imported]);
-  logImport('collections', 'collections.csv', (colCsvParsed.rows||[]).length, added, []);
+  logImport('collections','collections.csv',(colCsvParsed.rows||[]).length,added,[]);
   colCsvParsed=null; colCsvMapping={};
   toast(`Imported ${added} collection entries`); colMode='list'; go('collections');
 }
@@ -1785,12 +1962,11 @@ function parseMonthStr(s){
   return null;
 }
 function downloadColTemplate(){
-  const h=['Customer Name','AM Name','CSM Name','Invoice Amount','Regular','Upsell/Crosssell','Month'];
+  const h=['Date','Customer Name','Amount','TDS Amount','Inv Amount','GST','Total Amount','Upsell / Crossell','Month','Year'];
   const r=[
-    ['Reliance Jio','Rahul Sharma','Amit Singh','1200000','800000','400000','November'],
-    ['Infosys Ltd','Priya Patel','Sara Mehta','600000','600000','0','September'],
-    ['TCS','Neha Gupta','Amit Singh','1400000','0','1400000','November'],
-    ['Flipkart','Priya Patel','Sara Mehta','900000','500000','400000','January'],
+    ['2025-11-15','Reliance Jio','1000000','50000','1050000','189000','1239000','N','November','2025'],
+    ['2025-11-20','Infosys Ltd','600000','30000','630000','113400','743400','Y','November','2025'],
+    ['2025-12-05','TCS','1200000','60000','1260000','226800','1486800','N','December','2025'],
   ];
   const csv=[h,...r].map(row=>row.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download='collections_template.csv'; a.click();
@@ -2612,7 +2788,11 @@ function targets_page(){
   window._selTgtFy=window._selTgtFy||curFyq.fy;
   document.getElementById('app').innerHTML=`
     ${pageHeader('Targets','Quarterly targets, thresholds & accelerators per rep',
-      `<button onclick="go('targets','add')" class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold px-4 py-2 rounded-xl shadow">+ Add Target</button>`
+      `<div class="flex gap-2">
+        <button onclick="downloadTargetTemplate()" class="border text-slate-400 hover:bg-white/5 text-sm font-medium px-3 py-2 rounded-xl transition" style="border-color:rgba(255,255,255,0.1)">↓ Template</button>
+        <button onclick="go('targets','import')" class="border text-indigo-400 text-sm font-medium px-3 py-2 rounded-xl transition hover:bg-indigo-500/10" style="border-color:rgba(99,102,241,0.35)">↑ Import CSV</button>
+        <button onclick="go('targets','add')" class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold px-4 py-2 rounded-xl shadow">+ Add Target</button>
+      </div>`
     )}
     <div class="flex flex-wrap gap-3 items-center mb-5">
       ${sel('tgt-fy',[...allFys.map(f=>({v:f,l:f}))],window._selTgtFy,'w-auto')}
@@ -2624,7 +2804,7 @@ function targets_page(){
           >${q}</button>`).join('')}
       </div>
     </div>
-    <div data-tgt-body>${window._pageFilter==='add'?renderTgtForm():renderTgtBody()}</div>
+    <div data-tgt-body>${window._pageFilter==='add'?renderTgtForm():window._pageFilter==='import'?renderTgtImport():renderTgtBody()}</div>
   `;
   document.getElementById('tgt-fy').onchange=()=>{window._selTgtFy=document.getElementById('tgt-fy').value;renderTgtBody_();};
   window._pageFilter=null;
@@ -2661,17 +2841,22 @@ function renderTgtBody(){
   function mkRow(name,type,collected){
     const tgt=tgts.find(t=>t.rep_name===name&&t.rep_type===type)||null;
     const tgtAmt=tgt?.target_amount||0;
+    // Achieved = sum of Won opportunities for this rep in this FY+Quarter
+    const wonOpps=opps().filter(o=>(o.rep_name===name)&&o.fy===selFy&&o.quarter===selQ&&o.status==='Won');
+    const achieved=wonOpps.reduce((s,o)=>s+(o.value||0),0);
+    const attainPct=tgtAmt>0?Math.round(achieved/tgtAmt*100):null;
     const pct=tgtAmt>0?Math.round(collected/tgtAmt*100):null;
     const threshAmt=tgt?(tgtAmt*(tgt.threshold_pct||0)/100):0;
     const gated=tgt&&threshAmt>0&&collected<threshAmt;
-    const bar=pct!==null?`<div class="w-full h-1.5 rounded-full mt-1" style="background:rgba(255,255,255,0.1)"><div class="h-1.5 rounded-full" style="width:${Math.min(pct,100)}%;background:${pct>=100?'#10b981':pct>=70?'#f59e0b':'#ef4444'}"></div></div>`:'';
+    const bar=attainPct!==null?`<div class="w-full h-1.5 rounded-full mt-1" style="background:rgba(255,255,255,0.1)"><div class="h-1.5 rounded-full" style="width:${Math.min(attainPct,100)}%;background:${attainPct>=100?'#10b981':attainPct>=70?'#f59e0b':'#ef4444'}"></div></div>`:'';
     return `<tr>
       <td class="px-4 py-3 font-semibold text-slate-800">${name}</td>
       <td class="px-4 py-3">${tgtAmt>0?inr(tgtAmt):'<span class="text-slate-500 text-xs">Not set</span>'}</td>
+      <td class="px-4 py-3 font-semibold ${achieved>0?'text-emerald-400':'text-slate-500'}">${achieved>0?inr(achieved):'—'}</td>
+      <td class="px-4 py-3">${attainPct!==null?`<span class="font-bold ${attainPct>=100?'text-emerald-400':attainPct>=70?'text-amber-400':'text-red-400'}">${attainPct}%</span>${bar}`:'—'}</td>
+      <td class="px-4 py-3 text-slate-500">${inr(collected)}</td>
       <td class="px-4 py-3">${tgt?.threshold_pct?tgt.threshold_pct+'%':'—'}</td>
-      <td class="px-4 py-3 font-semibold text-slate-800">${inr(collected)}</td>
-      <td class="px-4 py-3">${pct!==null?`<span class="font-bold ${pct>=100?'text-emerald-400':pct>=70?'text-amber-400':'text-red-400'}">${pct}%</span>${bar}`:'—'}</td>
-      <td class="px-4 py-3">${gated?'<span class="text-xs text-red-400 font-semibold">⚠ Below threshold</span>':pct!==null&&pct>=100?'<span class="text-xs text-emerald-400">✓ Target hit</span>':'<span class="text-xs text-slate-500">In progress</span>'}</td>
+      <td class="px-4 py-3">${gated?'<span class="text-xs text-red-400 font-semibold">⚠ Below threshold</span>':attainPct!==null&&attainPct>=100?'<span class="text-xs text-emerald-400">✓ Target hit</span>':'<span class="text-xs text-slate-500">In progress</span>'}</td>
       <td class="px-4 py-3">${tgt?.accelerator_pct?tgt.accelerator_pct+'%':'—'}</td>
       <td class="px-4 py-3">${tgt?.cap_amount?inr(tgt.cap_amount):'—'}</td>
       <td class="px-4 py-3">
@@ -2684,7 +2869,7 @@ function renderTgtBody(){
   const csmRows=Object.entries(csmMap).map(([name,{reg,ups}])=>mkRow(name,'CSM',reg+ups));
   const noData=amRows.length===0&&csmRows.length===0;
   if(noData) return card(emptyState(`No collections found for ${selQ} ${selFy}. Import collections first.`),'p-4');
-  const colHeader=thRow(['Rep','Target','Threshold %','Actual Collected','Attainment','Status','Accelerator %','Cap','']);
+  const colHeader=thRow(['Rep','Target Allocated','Achieved (Won Opps)','Attainment %','Collections','Threshold %','Status','Accelerator %','Cap','']);
   return `
     ${amRows.length>0?`
     ${sectionHead('AM Targets','🎯')}
@@ -2759,6 +2944,84 @@ function saveTgtForm(existingId){
 function delTarget(id){
   if(!confirm('Remove this target?'))return;
   setTargets(targets().filter(t=>t.id!==id)); toast('Target removed'); go('targets');
+}
+function downloadTargetTemplate(){
+  const h=['Rep Name','Rep Type','FY','Quarter','Target Amount','Threshold %','Accelerator %','Cap Amount'];
+  const r=[
+    ['Rahul Sharma','AM','FY2025-26','Q3','2000000','70','120','300000'],
+    ['Priya Patel','CSM','FY2025-26','Q3','1500000','70','',''],
+  ];
+  const csv=[h,...r].map(row=>row.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download='targets_template.csv'; a.click();
+}
+function renderTgtImport(){
+  return `<div class="card p-6 max-w-xl">
+    <div class="flex items-center justify-between mb-5">
+      <h2 class="text-base font-bold text-slate-800">Import Targets from CSV</h2>
+      <button onclick="go('targets')" class="text-xs text-slate-400 hover:text-slate-600">← Back</button>
+    </div>
+    <div class="border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-all mb-4"
+         style="border-color:rgba(99,102,241,0.3)"
+         onclick="document.getElementById('tgt-csv-fi').click()"
+         ondragover="event.preventDefault();this.style.borderColor='#818cf8';this.style.background='rgba(99,102,241,0.08)'"
+         ondragleave="this.style.borderColor='rgba(99,102,241,0.3)';this.style.background=''"
+         ondrop="event.preventDefault();this.style.borderColor='rgba(99,102,241,0.3)';this.style.background='';handleTgtFileDrop(event)">
+      <div class="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl mx-auto mb-3" style="background:rgba(99,102,241,0.15)">📂</div>
+      <p class="text-sm font-semibold text-slate-700">Drop CSV here or <span style="color:#818cf8">browse</span></p>
+      <p class="text-xs text-slate-500 mt-2">Columns: <strong>Rep Name</strong> · <strong>Rep Type</strong> · <strong>FY</strong> · <strong>Quarter</strong> · <strong>Target Amount</strong></p>
+      <p class="text-xs text-slate-500 mt-1">Optional: Threshold % · Accelerator % · Cap Amount</p>
+    </div>
+    <input type="file" id="tgt-csv-fi" accept=".csv" class="hidden" onchange="handleTgtFileInput(this)"/>
+    <p class="text-xs text-slate-500 text-center">Need a template? <button onclick="downloadTargetTemplate()" style="color:#818cf8" class="hover:underline font-medium">Download sample CSV</button></p>
+  </div>`;
+}
+function handleTgtFileDrop(e){const f=e.dataTransfer.files[0]; if(f) processTgtCSVFile(f);}
+function handleTgtFileInput(i){if(i.files[0]) processTgtCSVFile(i.files[0]);}
+function processTgtCSVFile(file){
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const parsed=parseCSV(e.target.result);
+    if(!parsed.headers.length){toast('Could not parse CSV.');return;}
+    executeTgtImport(parsed);
+  };
+  reader.readAsText(file);
+}
+function executeTgtImport(parsed){
+  const norm=h=>h.toLowerCase().replace(/[^a-z0-9]/g,' ').trim();
+  const headers=parsed.headers;
+  function findCol(...aliases){return headers.find(h=>aliases.some(a=>norm(h)===a||norm(h).includes(a)))||null;}
+  const repCol=findCol('rep name','rep','name','am name','am','csm name','csm');
+  const typeCol=findCol('rep type','type','role');
+  const fyCol=findCol('fy','financial year','year');
+  const qCol=findCol('quarter','q','qtr');
+  const tgtCol=findCol('target amount','target','allocated','allocation','deal target');
+  const threshCol=findCol('threshold','threshold pct','threshold %','min pct');
+  const accelCol=findCol('accelerator','accelerator pct','accelerator %','accel');
+  const capCol=findCol('cap','cap amount','max incentive','ceiling');
+  if(!repCol||!tgtCol){alert('CSV must have Rep Name and Target Amount columns.');return;}
+  const existing=targets(); let added=0;
+  const imported=parsed.rows.map(row=>{
+    const repName=(row[repCol]||'').trim(); if(!repName)return null;
+    const repType=(row[typeCol||'']||'AM').trim()||'AM';
+    const validType=repType==='CSM'?'CSM':'AM';
+    const fy=(row[fyCol||'']||'').trim();
+    const quarter=(row[qCol||'']||'').trim().toUpperCase();
+    const validQ=['Q1','Q2','Q3','Q4'].includes(quarter)?quarter:'Q1';
+    const tgtAmt=parseFloat((row[tgtCol]||'').replace(/[^0-9.]/g,''))||0;
+    if(!tgtAmt)return null;
+    const thresh=threshCol?parseFloat(row[threshCol])||null:null;
+    const accel=accelCol?parseFloat(row[accelCol])||null:null;
+    const cap=capCol?parseFloat((row[capCol]||'').replace(/[^0-9.]/g,''))||null:null;
+    added++;
+    return{rep_name:repName,rep_type:validType,fy,quarter:validQ,target_amount:tgtAmt,threshold_pct:thresh,accelerator_pct:accel,cap_amount:cap};
+  }).filter(Boolean);
+  const maxId=existing.length?existing.reduce((mx,a)=>Math.max(mx,Number(a.id)||0),0):0;
+  imported.forEach((t,i)=>{t.id=maxId+i+1;});
+  // Merge: replace matching rep+fy+quarter, add new
+  const merged=[...existing.filter(e=>!imported.some(i=>i.rep_name===e.rep_name&&i.fy===e.fy&&i.quarter===e.quarter)),...imported];
+  setTargets(merged);
+  logImport('targets','targets.csv',parsed.rows.length,added,[]);
+  toast(`Imported ${added} targets`); go('targets');
 }
 
 function migrateData(){
